@@ -1,10 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
 
 <head>
     <meta charset="UTF-8">
     <title>Pacientes - Atrial</title>
-
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 
@@ -15,19 +15,21 @@
     </header>
 
     <main>
-
         <h2>Pacientes cadastrados</h2>
-
         <p>Lista de pacientes cadastrados no sistema.</p>
 
         <a href="{{ url_for('cadastro_paciente') }}">
             <button type="button">Novo paciente</button>
         </a>
 
+        <form method="POST"
+              action="{{ url_for('chamar_proximo') }}"
+              style="display: inline;">
+            <button type="submit">Chamar próximo</button>
+        </form>
+
         {% if pacientes %}
-
         <table>
-
             <thead>
                 <tr>
                     <th>Posição</th>
@@ -36,6 +38,7 @@
                     <th>Nascimento</th>
                     <th>CPF</th>
                     <th>Prioridade</th>
+                    <th>Status</th>
                     <th>Telefone</th>
                     <th>E-mail</th>
                     <th>Ações</th>
@@ -43,9 +46,7 @@
             </thead>
 
             <tbody>
-
                 {% for paciente in pacientes %}
-
                 <tr>
                     <td>{{ loop.index }}</td>
                     <td>{{ paciente.id }}</td>
@@ -57,41 +58,43 @@
                         {{ paciente.prioridade }}
                     </td>
 
+                    <td class="status-{{ paciente.status|lower|replace(' ', '-') }}">
+                        {{ paciente.status }}
+                    </td>
+
                     <td>{{ paciente.telefone }}</td>
                     <td>{{ paciente.email }}</td>
 
                     <td>
-
                         <a href="{{ url_for('editar_paciente', id=paciente.id) }}">
                             <button type="button">Editar</button>
                         </a>
 
-                        <form
-                            method="POST"
-                            action="{{ url_for('excluir_paciente', id=paciente.id) }}"
-                            onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');"
-                        >
+                        {% if paciente.status == "Em atendimento" %}
+                        <form method="POST"
+                              action="{{ url_for('finalizar_atendimento', id=paciente.id) }}"
+                              style="display: inline;">
+                            <button type="submit">Concluir</button>
+                        </form>
+                        {% endif %}
+
+                        <form method="POST"
+                              action="{{ url_for('excluir_paciente', id=paciente.id) }}"
+                              onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');"
+                              style="display: inline;">
                             <button type="submit">Excluir</button>
                         </form>
-
                     </td>
-
                 </tr>
-
                 {% endfor %}
-
             </tbody>
-
         </table>
 
         {% else %}
-
         <p>Nenhum paciente cadastrado ainda.</p>
-
         {% endif %}
 
     </main>
 
 </body>
-
 </html>
