@@ -91,3 +91,18 @@ td form {
     font-weight: bold;
     background-color: #f8d7da;
 }
+/* Status do atendimento */
+
+.status-aguardando {
+    color: #555;
+}
+
+.status-em-atendimento {
+    font-weight: bold;
+    background-color: #d1e7dd;
+}
+
+.status-concluído {
+    color: #888;
+    text-decoration: line-through;
+}
