@@ -75,21 +75,40 @@ def cadastro_paciente():
     return render_template("cadastros.html")
 
 
-@app.route("/pacientes")
-def pacientes():
+def buscar_por_status(status):
+    """Pacientes com o status informado, na ordem da fila:
+    Urgente > Preferencial > Normal e, no empate, quem chegou primeiro."""
 
-    pacientes = Paciente.query.order_by(
+    return Paciente.query.filter_by(
+        status=status
+    ).order_by(
         db.case(
             (Paciente.prioridade == "Urgente", 1),
             (Paciente.prioridade == "Preferencial", 2),
-            (Paciente.prioridade == "Normal", 3)
+            else_=3
         ),
         Paciente.id
+    )
+
+
+@app.route("/pacientes")
+def pacientes():
+
+    em_atendimento = buscar_por_status("Em atendimento").all()
+    fila = buscar_por_status("Aguardando").all()
+
+    # Histórico: os concluídos mais recentes primeiro
+    concluidos = Paciente.query.filter_by(
+        status="Concluído"
+    ).order_by(
+        Paciente.id.desc()
     ).all()
 
     return render_template(
         "pacientes.html",
-        pacientes=pacientes
+        em_atendimento=em_atendimento,
+        fila=fila,
+        concluidos=concluidos
     )
 
 
@@ -121,16 +140,7 @@ def editar_paciente(id):
 @app.route("/pacientes/chamar-proximo", methods=["POST"])
 def chamar_proximo():
 
-    paciente = Paciente.query.filter_by(
-        status="Aguardando"
-    ).order_by(
-        db.case(
-            (Paciente.prioridade == "Urgente", 1),
-            (Paciente.prioridade == "Preferencial", 2),
-            (Paciente.prioridade == "Normal", 3)
-        ),
-        Paciente.id
-    ).first()
+    paciente = buscar_por_status("Aguardando").first()
 
     if paciente:
         paciente.status = "Em atendimento"

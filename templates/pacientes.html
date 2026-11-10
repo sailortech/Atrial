@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 
@@ -15,8 +14,7 @@
     </header>
 
     <main>
-        <h2>Pacientes cadastrados</h2>
-        <p>Lista de pacientes cadastrados no sistema.</p>
+        <h2>Pacientes</h2>
 
         <a href="{{ url_for('cadastro_paciente') }}">
             <button type="button">Novo paciente</button>
@@ -25,74 +23,135 @@
         <form method="POST"
               action="{{ url_for('chamar_proximo') }}"
               style="display: inline;">
-            <button type="submit">Chamar próximo</button>
+            <button type="submit" {% if not fila %}disabled{% endif %}>
+                Chamar próximo
+            </button>
         </form>
 
-        {% if pacientes %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Posição</th>
-                    <th>ID</th>
-                    <th>Nome</th>
-                    <th>Nascimento</th>
-                    <th>CPF</th>
-                    <th>Prioridade</th>
-                    <th>Status</th>
-                    <th>Telefone</th>
-                    <th>E-mail</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
+        <!-- ===== Em atendimento ===== -->
+        <section>
+            <h3>Em atendimento ({{ em_atendimento|length }})</h3>
 
-            <tbody>
-                {% for paciente in pacientes %}
-                <tr>
-                    <td>{{ loop.index }}</td>
-                    <td>{{ paciente.id }}</td>
-                    <td>{{ paciente.nome }}</td>
-                    <td>{{ paciente.nascimento }}</td>
-                    <td>{{ paciente.cpf }}</td>
+            {% if em_atendimento %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Prioridade</th>
+                        <th>CPF</th>
+                        <th>Observações</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for paciente in em_atendimento %}
+                    <tr class="status-em-atendimento">
+                        <td>{{ paciente.nome }}</td>
+                        <td class="prioridade-{{ paciente.prioridade|lower }}">
+                            {{ paciente.prioridade }}
+                        </td>
+                        <td>{{ paciente.cpf }}</td>
+                        <td>{{ paciente.observacoes or "-" }}</td>
+                        <td>
+                            <form method="POST"
+                                  action="{{ url_for('finalizar_atendimento', id=paciente.id) }}">
+                                <button type="submit">Concluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="vazio">Ninguém sendo atendido no momento.</p>
+            {% endif %}
+        </section>
 
-                    <td class="prioridade-{{ paciente.prioridade|lower }}">
-                        {{ paciente.prioridade }}
-                    </td>
+        <!-- ===== Fila de espera ===== -->
+        <section>
+            <h3>Fila de espera ({{ fila|length }})</h3>
 
-                    <td class="status-{{ paciente.status|lower|replace(' ', '-') }}">
-                        {{ paciente.status }}
-                    </td>
+            {% if fila %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Posição</th>
+                        <th>Nome</th>
+                        <th>Prioridade</th>
+                        <th>Nascimento</th>
+                        <th>CPF</th>
+                        <th>Telefone</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for paciente in fila %}
+                    <tr>
+                        <td>{{ loop.index }}º</td>
+                        <td>{{ paciente.nome }}</td>
+                        <td class="prioridade-{{ paciente.prioridade|lower }}">
+                            {{ paciente.prioridade }}
+                        </td>
+                        <td>{{ paciente.nascimento }}</td>
+                        <td>{{ paciente.cpf }}</td>
+                        <td>{{ paciente.telefone or "-" }}</td>
+                        <td>
+                            <a href="{{ url_for('editar_paciente', id=paciente.id) }}">
+                                <button type="button">Editar</button>
+                            </a>
+                            <form method="POST"
+                                  action="{{ url_for('excluir_paciente', id=paciente.id) }}"
+                                  onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');">
+                                <button type="submit">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="vazio">A fila está vazia.</p>
+            {% endif %}
+        </section>
 
-                    <td>{{ paciente.telefone }}</td>
-                    <td>{{ paciente.email }}</td>
+        <!-- ===== Histórico ===== -->
+        <section>
+            <h3>Histórico de atendimentos ({{ concluidos|length }})</h3>
 
-                    <td>
-                        <a href="{{ url_for('editar_paciente', id=paciente.id) }}">
-                            <button type="button">Editar</button>
-                        </a>
-
-                        {% if paciente.status == "Em atendimento" %}
-                        <form method="POST"
-                              action="{{ url_for('finalizar_atendimento', id=paciente.id) }}"
-                              style="display: inline;">
-                            <button type="submit">Concluir</button>
-                        </form>
-                        {% endif %}
-
-                        <form method="POST"
-                              action="{{ url_for('excluir_paciente', id=paciente.id) }}"
-                              onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');"
-                              style="display: inline;">
-                            <button type="submit">Excluir</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-
-        {% else %}
-        <p>Nenhum paciente cadastrado ainda.</p>
-        {% endif %}
+            {% if concluidos %}
+            <table class="historico">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Prioridade</th>
+                        <th>CPF</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for paciente in concluidos %}
+                    <tr>
+                        <td>{{ paciente.nome }}</td>
+                        <td>{{ paciente.prioridade }}</td>
+                        <td>{{ paciente.cpf }}</td>
+                        <td>
+                            <a href="{{ url_for('editar_paciente', id=paciente.id) }}">
+                                <button type="button">Editar</button>
+                            </a>
+                            <form method="POST"
+                                  action="{{ url_for('excluir_paciente', id=paciente.id) }}"
+                                  onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');">
+                                <button type="submit">Excluir</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="vazio">Nenhum atendimento concluído ainda.</p>
+            {% endif %}
+        </section>
 
     </main>
 

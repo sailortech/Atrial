@@ -106,3 +106,27 @@ td form {
     color: #888;
     text-decoration: line-through;
 }
+
+/* Blocos da página de pacientes */
+
+section {
+    margin-top: 40px;
+}
+
+section table {
+    margin-top: 10px;
+}
+
+.vazio {
+    color: #888;
+    font-style: italic;
+}
+
+.historico {
+    color: #777;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
