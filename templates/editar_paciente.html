@@ -1,108 +1,51 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <title>Editar paciente - Atrial</title>
+{% block titulo %}Editar paciente{% endblock %}
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
+{% block conteudo %}
 
-<body>
+<h2>Editar paciente</h2>
 
-    <header>
-        <h1>Atrial</h1>
-    </header>
+<form method="POST">
 
-    <main>
+    <label for="nome">Nome completo:</label>
+    <input type="text" id="nome" name="nome"
+           value="{{ paciente.nome }}" required>
 
-        <h2>Editar paciente</h2>
+    <label for="nascimento">Data de nascimento:</label>
+    <input type="date" id="nascimento" name="nascimento"
+           value="{{ paciente.nascimento }}" required>
 
-        <form method="POST">
+    <label for="cpf">CPF:</label>
+    <input type="text" id="cpf" name="cpf"
+           value="{{ paciente.cpf }}" required>
 
-            <label for="nome">Nome completo:</label>
+    <label for="prioridade">Prioridade:</label>
+    <select id="prioridade" name="prioridade">
+        {% for opcao in ["Normal", "Preferencial", "Urgente"] %}
+        <option value="{{ opcao }}" {% if paciente.prioridade == opcao %}selected{% endif %}>
+            {{ opcao }}
+        </option>
+        {% endfor %}
+    </select>
 
-            <input
-                type="text"
-                id="nome"
-                name="nome"
-                value="{{ paciente.nome }}"
-                required
-            >
+    <label for="telefone">Telefone:</label>
+    <input type="tel" id="telefone" name="telefone"
+           value="{{ paciente.telefone or '' }}">
 
-            <label for="nascimento">Data de nascimento:</label>
+    <label for="email">E-mail:</label>
+    <input type="email" id="email" name="email"
+           value="{{ paciente.email or '' }}">
 
-            <input
-                type="date"
-                id="nascimento"
-                name="nascimento"
-                value="{{ paciente.nascimento }}"
-                required
-            >
+    <label for="observacoes">Observações:</label>
+    <textarea id="observacoes" name="observacoes">{{ paciente.observacoes or '' }}</textarea>
 
-            <label for="cpf">CPF:</label>
+    <button type="submit">Salvar alterações</button>
 
-            <input
-                type="text"
-                id="cpf"
-                name="cpf"
-                value="{{ paciente.cpf }}"
-                required
-            >
+</form>
 
-            <label for="prioridade">Prioridade:</label>
+<a href="{{ url_for('pacientes') }}">
+    <button type="button">Cancelar</button>
+</a>
 
-            <select id="prioridade" name="prioridade">
-
-                <option value="Normal" {% if paciente.prioridade == "Normal" %}selected{% endif %}>
-                    Normal
-                </option>
-
-                <option value="Preferencial" {% if paciente.prioridade == "Preferencial" %}selected{% endif %}>
-                    Preferencial
-                </option>
-
-                <option value="Urgente" {% if paciente.prioridade == "Urgente" %}selected{% endif %}>
-                    Urgente
-                </option>
-
-            </select>
-
-            <label for="telefone">Telefone:</label>
-
-            <input
-                type="tel"
-                id="telefone"
-                name="telefone"
-                value="{{ paciente.telefone }}"
-            >
-
-            <label for="email">E-mail:</label>
-
-            <input
-                type="email"
-                id="email"
-                name="email"
-                value="{{ paciente.email }}"
-            >
-
-            <label for="observacoes">Observações:</label>
-
-            <textarea
-                id="observacoes"
-                name="observacoes"
-            >{{ paciente.observacoes }}</textarea>
-
-            <button type="submit">Salvar alterações</button>
-
-        </form>
-
-        <a href="{{ url_for('pacientes') }}">
-            <button type="button">Cancelar</button>
-        </a>
-
-    </main>
-
-</body>
-
-</html>
+{% endblock %}

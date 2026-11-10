@@ -7,6 +7,34 @@ body {
 header {
     padding: 20px;
     text-align: center;
+    border-bottom: 1px solid #ddd;
+}
+
+header h1 {
+    margin: 0 0 10px;
+}
+
+/* Menu de navegação */
+
+nav {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+nav a {
+    color: #333;
+    text-decoration: none;
+    padding: 6px 4px;
+}
+
+nav a:hover {
+    color: #000;
+}
+
+nav a.ativo {
+    font-weight: bold;
+    border-bottom: 2px solid #333;
 }
 
 main {

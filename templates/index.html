@@ -1,39 +1,23 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8">
-    <title>Atrial</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
+{% block titulo %}Início{% endblock %}
 
-<body>
+{% block conteudo %}
 
-    <header>
-        <h1>Atrial</h1>
-    </header>
+<h2>Sistema de atendimento</h2>
 
-    <main>
-        <h2>Sistema de atendimento</h2>
+<p>Bem-vindo ao Atrial.</p>
 
-        <p>Bem-vindo ao Atrial.</p>
+<p>
+    Cadastre pacientes e acompanhe as informações de atendimento.
+</p>
 
-        <p>
-            Cadastre pacientes e acompanhe as informações de atendimento.
-        </p>
+<a href="{{ url_for('cadastro_paciente') }}">
+    <button type="button">Cadastrar paciente</button>
+</a>
 
-        <a href="{{ url_for('cadastro_paciente') }}">
-            Cadastrar paciente
-        </a>
+<a href="{{ url_for('pacientes') }}">
+    <button type="button">Ver fila de pacientes</button>
+</a>
 
-        <br>
-        <br>
-
-        <a href="{{ url_for('pacientes') }}">
-            Ver pacientes cadastrados
-        </a>
-    </main>
-
-</body>
-
-</html>
+{% endblock %}
