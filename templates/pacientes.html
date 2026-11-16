@@ -13,10 +13,30 @@
 <form method="POST"
       action="{{ url_for('chamar_proximo') }}"
       style="display: inline;">
-    <button type="submit" {% if not fila %}disabled{% endif %}>
+    {# posicoes tem a fila inteira, mesmo durante uma busca #}
+    <button type="submit" {% if not posicoes %}disabled{% endif %}>
         Chamar próximo
     </button>
 </form>
+
+<!-- ===== Busca ===== -->
+{# method GET: o termo vai para a URL (/pacientes?q=ana),
+   então dá pra recarregar ou compartilhar o link da busca #}
+<form method="GET" action="{{ url_for('pacientes') }}" class="busca">
+    <input type="search"
+           name="q"
+           value="{{ termo }}"
+           placeholder="Buscar por nome ou CPF">
+    <button type="submit">Buscar</button>
+</form>
+
+{% if termo %}
+<p class="busca-ativa">
+    Mostrando resultados para <strong>"{{ termo }}"</strong>
+    ({{ em_atendimento|length + fila|length + concluidos|length }} encontrados).
+    <a href="{{ url_for('pacientes') }}">Limpar busca</a>
+</p>
+{% endif %}
 
 <!-- ===== Em atendimento ===== -->
 <section>
@@ -83,7 +103,7 @@
         <tbody>
             {% for paciente in fila %}
             <tr>
-                <td>{{ loop.index }}º</td>
+                <td>{{ posicoes[paciente.id] }}º</td>
                 <td>{{ paciente.nome }}</td>
                 <td class="prioridade-{{ paciente.prioridade|lower }}">
                     {{ paciente.prioridade }}

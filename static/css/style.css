@@ -176,3 +176,24 @@ button:disabled {
     background-color: #f8d7da;
     color: #842029;
 }
+
+/* ===== Busca ===== */
+
+.busca {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 20px;
+}
+
+.busca input {
+    flex: 1;
+    max-width: 400px;
+}
+
+.busca button {
+    margin-top: 0;
+}
+
+.busca-ativa {
+    color: #555;
+}

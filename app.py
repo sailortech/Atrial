@@ -231,23 +231,57 @@ def buscar_por_status(status):
     )
 
 
+def filtrar_busca(consulta, termo):
+    """Mantém só os pacientes cujo nome ou CPF contém o termo.
+
+    'ana' acha 'Ana' e 'Mariana'; '529.982' acha o CPF 52998224725.
+    Termo vazio = não filtra nada.
+    """
+    if not termo:
+        return consulta
+
+    # autoescape: um '%' ou '_' digitado é tratado como texto comum
+    condicoes = [Paciente.nome.icontains(termo, autoescape=True)]
+
+    digitos = somente_digitos(termo)
+    if digitos:
+        condicoes.append(Paciente.cpf.contains(digitos))
+
+    return consulta.filter(db.or_(*condicoes))
+
+
 @app.route("/pacientes")
 def pacientes():
 
-    em_atendimento = buscar_por_status("Em atendimento").all()
-    fila = buscar_por_status("Aguardando").all()
+    # ?q=... na URL (vem do campo de busca)
+    termo = request.args.get("q", "").strip()
+
+    em_atendimento = filtrar_busca(
+        buscar_por_status("Em atendimento"), termo
+    ).all()
+
+    # A posição na fila vem da fila COMPLETA: se a busca esconder
+    # alguém, quem sobrou não pode "subir" de posição.
+    posicoes = {
+        paciente.id: numero
+        for numero, paciente in enumerate(buscar_por_status("Aguardando"), start=1)
+    }
+
+    fila = filtrar_busca(buscar_por_status("Aguardando"), termo).all()
 
     # Histórico: os concluídos mais recentes primeiro
-    concluidos = Paciente.query.filter_by(
-        status="Concluído"
+    concluidos = filtrar_busca(
+        Paciente.query.filter_by(status="Concluído"), termo
     ).order_by(
         Paciente.id.desc()
     ).all()
 
     return render_template(
         "pacientes.html",
+        termo=termo,
         em_atendimento=em_atendimento,
         fila=fila,
+        posicoes=posicoes,
         concluidos=concluidos
     )
 
