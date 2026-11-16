@@ -28,6 +28,8 @@
             <tr>
                 <th>Nome</th>
                 <th>Prioridade</th>
+                <th>Chamado às</th>
+                <th>Esperou</th>
                 <th>CPF</th>
                 <th>Observações</th>
                 <th>Ações</th>
@@ -40,6 +42,8 @@
                 <td class="prioridade-{{ paciente.prioridade|lower }}">
                     {{ paciente.prioridade }}
                 </td>
+                <td>{{ paciente.chamado_em|hora }}</td>
+                <td>{{ paciente.chegada|duracao(paciente.chamado_em) }}</td>
                 <td>{{ paciente.cpf|cpf }}</td>
                 <td>{{ paciente.observacoes or "-" }}</td>
                 <td>
@@ -68,6 +72,8 @@
                 <th>Posição</th>
                 <th>Nome</th>
                 <th>Prioridade</th>
+                <th>Chegada</th>
+                <th>Esperando há</th>
                 <th>Nascimento</th>
                 <th>CPF</th>
                 <th>Telefone</th>
@@ -82,6 +88,8 @@
                 <td class="prioridade-{{ paciente.prioridade|lower }}">
                     {{ paciente.prioridade }}
                 </td>
+                <td>{{ paciente.chegada|hora }}</td>
+                <td>{{ paciente.chegada|duracao }}</td>
                 <td>{{ paciente.nascimento }}</td>
                 <td>{{ paciente.cpf|cpf }}</td>
                 <td>{{ paciente.telefone or "-" }}</td>
@@ -114,6 +122,9 @@
             <tr>
                 <th>Nome</th>
                 <th>Prioridade</th>
+                <th>Data</th>
+                <th>Esperou</th>
+                <th>Duração</th>
                 <th>CPF</th>
                 <th>Ações</th>
             </tr>
@@ -123,6 +134,13 @@
             <tr>
                 <td>{{ paciente.nome }}</td>
                 <td>{{ paciente.prioridade }}</td>
+                <td>
+                    {% if paciente.concluido_em %}
+                        {{ paciente.concluido_em.strftime("%d/%m %H:%M") }}
+                    {% else %}-{% endif %}
+                </td>
+                <td>{{ paciente.chegada|duracao(paciente.chamado_em) }}</td>
+                <td>{{ paciente.chamado_em|duracao(paciente.concluido_em) }}</td>
                 <td>{{ paciente.cpf|cpf }}</td>
                 <td>
                     <a href="{{ url_for('editar_paciente', id=paciente.id) }}">

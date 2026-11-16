@@ -1,10 +1,11 @@
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 
 from flask import Flask, render_template, request, redirect, url_for, flash
 
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 
 
 app = Flask(__name__)
@@ -14,10 +15,16 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "chave-de-desenvolvimento")
 
 # Configuração do banco de dados
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///atrial.db"
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL", "sqlite:///atrial.db"
+)
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
+
+# Migrations: cuidam das mudanças na estrutura do banco
+# (ex.: adicionar uma coluna) sem perder os dados.
+migrate = Migrate(app, db)
 
 
 # Modelo do paciente
@@ -42,6 +49,11 @@ class Paciente(db.Model):
         nullable=False,
         default="Aguardando"
     )
+
+    # Horários do atendimento (vazios em pacientes antigos)
+    chegada = db.Column(db.DateTime)       # entrou na fila
+    chamado_em = db.Column(db.DateTime)    # foi chamado para atendimento
+    concluido_em = db.Column(db.DateTime)  # atendimento terminou
 
 
 PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
@@ -85,6 +97,36 @@ def formatar_cpf(cpf):
     if len(cpf) != 11:
         return cpf
     return f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
+
+
+@app.template_filter("hora")
+def formatar_hora(momento):
+    """{{ paciente.chegada|hora }} -> 14:32"""
+    if momento is None:
+        return "-"
+    return momento.strftime("%H:%M")
+
+
+@app.template_filter("duracao")
+def formatar_duracao(inicio, fim=None):
+    """Tempo entre dois horários, em texto.
+
+    {{ paciente.chegada|duracao }}                     -> de chegada até agora
+    {{ paciente.chegada|duracao(paciente.chamado_em) }} -> entre os dois
+    """
+    if inicio is None:
+        return "-"
+
+    fim = fim or datetime.now()
+    minutos = int((fim - inicio).total_seconds() // 60)
+
+    if minutos < 1:
+        return "menos de 1 min"
+    if minutos < 60:
+        return f"{minutos} min"
+
+    horas, minutos = divmod(minutos, 60)
+    return f"{horas}h {minutos:02d}min"
 
 
 def ler_formulario(paciente_id=None):
@@ -157,7 +199,11 @@ def cadastro_paciente():
             # Mostra o formulário de novo, com o que já foi digitado
             return render_template("cadastros.html", dados=dados)
 
-        paciente = Paciente(**dados, status="Aguardando")
+        paciente = Paciente(
+            **dados,
+            status="Aguardando",
+            chegada=datetime.now()
+        )
 
         db.session.add(paciente)
         db.session.commit()
@@ -244,6 +290,7 @@ def chamar_proximo():
 
     if paciente:
         paciente.status = "Em atendimento"
+        paciente.chamado_em = datetime.now()
         db.session.commit()
         flash(f"Chamando {paciente.nome} ({paciente.prioridade}).", "sucesso")
     else:
@@ -258,6 +305,7 @@ def finalizar_atendimento(id):
 
     if paciente.status == "Em atendimento":
         paciente.status = "Concluído"
+        paciente.concluido_em = datetime.now()
         db.session.commit()
         flash(f"Atendimento de {paciente.nome} concluído.", "sucesso")
 
@@ -280,26 +328,6 @@ def excluir_paciente(id):
 
 
 if __name__ == "__main__":
-
-    with app.app_context():
-
-        db.create_all()
-
-        # Atualiza bancos antigos que ainda não possuem a coluna status
-        try:
-            db.session.execute(
-                db.text(
-                    "ALTER TABLE paciente "
-                    "ADD COLUMN status VARCHAR(20) "
-                    "NOT NULL DEFAULT 'Aguardando'"
-                )
-            )
-
-            db.session.commit()
-
-            print("Coluna status adicionada ao banco.")
-
-        except Exception:
-            db.session.rollback()
-
+    # A estrutura do banco agora é criada/atualizada com:
+    #   flask --app app db upgrade
     app.run(debug=True)
