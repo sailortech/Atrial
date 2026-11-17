@@ -1,0 +1,4 @@
+# Ferramentas só para desenvolvimento (não precisa no servidor).
+# Instale com: pip install -r requirements-dev.txt
+-r requirements.txt
+pytest==9.2.0
