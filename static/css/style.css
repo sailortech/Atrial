@@ -197,3 +197,94 @@ button:disabled {
 .busca-ativa {
     color: #555;
 }
+
+/* ===== Painel de chamada (TV) ===== */
+/* Tudo grande e com contraste alto: é lido de longe. */
+
+body.painel {
+    background-color: #12263a;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+}
+
+.painel-topo {
+    display: flex;
+    justify-content: space-between;
+    padding: 20px 40px;
+    font-size: 2rem;
+    font-weight: bold;
+    border-bottom: 1px solid #2f4a63;
+}
+
+.painel-atual {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 20px;
+}
+
+.painel-rotulo {
+    margin: 0;
+    font-size: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #9fb6cc;
+}
+
+.painel-nome {
+    margin: 10px 0;
+    font-size: clamp(3rem, 10vw, 8rem);
+    font-weight: bold;
+}
+
+.painel-detalhe {
+    margin: 0;
+    font-size: 2rem;
+    color: #cfdbe6;
+}
+
+/* Animação quando um paciente novo é chamado */
+@keyframes destaque {
+    0%, 50%, 100% { background-color: transparent; }
+    25%, 75% { background-color: #1f6f50; }
+}
+
+.piscando {
+    animation: destaque 2s ease-in-out;
+}
+
+.painel-rodape {
+    display: flex;
+    justify-content: space-between;
+    gap: 40px;
+    padding: 20px 40px 30px;
+    border-top: 1px solid #2f4a63;
+}
+
+.painel-rodape ul {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0;
+    font-size: 1.6rem;
+}
+
+.painel-rodape li span {
+    color: #9fb6cc;
+    margin-left: 10px;
+}
+
+.painel-contador {
+    text-align: right;
+}
+
+#aguardando {
+    margin: 10px 0 0;
+    font-size: 4rem;
+    font-weight: bold;
+}

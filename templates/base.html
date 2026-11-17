@@ -26,6 +26,10 @@
                class="{% if request.endpoint == 'cadastro_paciente' %}ativo{% endif %}">
                 Novo paciente
             </a>
+            {# target="_blank": abre em outra aba, para colocar na TV #}
+            <a href="{{ url_for('painel') }}" target="_blank">
+                Painel da TV
+            </a>
         </nav>
     </header>
 

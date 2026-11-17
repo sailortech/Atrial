@@ -286,6 +286,61 @@ def pacientes():
     )
 
 
+# ---------- Painel de chamada (TV da recepção) ----------
+
+def primeiro_nome_e_inicial(nome):
+    """'Maria da Silva Souza' -> 'Maria S.'
+
+    O painel fica numa tela pública: mostrar o nome completo
+    expõe o paciente sem necessidade.
+    """
+    partes = nome.split()
+    if len(partes) == 1:
+        return partes[0]
+    return f"{partes[0]} {partes[-1][0]}."
+
+
+def dados_do_painel():
+    """O que a TV precisa mostrar, em formato de dicionário
+    (vira JSON na rota /painel/dados)."""
+
+    # Últimas chamadas: quem foi chamado mais recentemente vem primeiro.
+    # Inclui quem já foi concluído, para a lista não "sumir" na TV.
+    chamados = Paciente.query.filter(
+        Paciente.chamado_em.isnot(None)
+    ).order_by(
+        Paciente.chamado_em.desc()
+    ).limit(5).all()
+
+    def resumo(paciente):
+        return {
+            # id + horário identificam UMA chamada; o JavaScript
+            # usa isso para saber quando alguém novo foi chamado
+            "chave": f"{paciente.id}-{paciente.chamado_em.isoformat()}",
+            "nome": primeiro_nome_e_inicial(paciente.nome),
+            "prioridade": paciente.prioridade,
+            "hora": formatar_hora(paciente.chamado_em),
+        }
+
+    return {
+        "atual": resumo(chamados[0]) if chamados else None,
+        "anteriores": [resumo(p) for p in chamados[1:]],
+        "aguardando": buscar_por_status("Aguardando").count(),
+    }
+
+
+@app.route("/painel")
+def painel():
+    # A página já vem preenchida; depois o JavaScript só atualiza
+    return render_template("painel.html", dados=dados_do_painel())
+
+
+@app.route("/painel/dados")
+def painel_dados():
+    # Um dicionário devolvido por uma rota vira JSON automaticamente
+    return dados_do_painel()
+
+
 @app.route("/pacientes/editar/<int:id>", methods=["GET", "POST"])
 def editar_paciente(id):
 

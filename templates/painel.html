@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+{# Esta página NÃO estende base.html: na TV não queremos menu nem mensagens #}
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Painel de chamada - Atrial</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body class="painel">
+
+    <div class="painel-topo">
+        <span>Atrial</span>
+        <span id="relogio">--:--</span>
+    </div>
+
+    <div class="painel-atual" id="atual">
+        {% if dados.atual %}
+        <p class="painel-rotulo">Chamando agora</p>
+        <p class="painel-nome">{{ dados.atual.nome }}</p>
+        <p class="painel-detalhe">
+            {{ dados.atual.prioridade }} · chamado às {{ dados.atual.hora }}
+        </p>
+        {% else %}
+        <p class="painel-rotulo">Aguarde ser chamado</p>
+        {% endif %}
+    </div>
+
+    <div class="painel-rodape">
+        <div>
+            <p class="painel-rotulo">Últimas chamadas</p>
+            <ul id="anteriores">
+                {% for chamada in dados.anteriores %}
+                <li>{{ chamada.nome }} <span>{{ chamada.hora }}</span></li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="painel-contador">
+            <p class="painel-rotulo">Na fila</p>
+            <p id="aguardando">{{ dados.aguardando }}</p>
+        </div>
+    </div>
+
+    <script>
+        // A cada poucos segundos, pergunta ao servidor (/painel/dados)
+        // como está a fila e redesenha só o que mudou. Assim a TV não
+        // precisa recarregar a página inteira (e não fica "piscando").
+
+        const INTERVALO = 3000; // milissegundos
+
+        // Guarda qual chamada está na tela, para perceber uma nova
+        let chaveAtual = {{ (dados.atual.chave if dados.atual else none)|tojson }};
+
+        // textContent (e não innerHTML) garante que um nome com "<" ou
+        // outros símbolos apareça como texto, sem virar código na página.
+        function criar(tag, classe, texto) {
+            const elemento = document.createElement(tag);
+            if (classe) elemento.className = classe;
+            elemento.textContent = texto;
+            return elemento;
+        }
+
+        function desenhar(dados) {
+            const atual = document.getElementById("atual");
+
+            if (dados.atual) {
+                atual.replaceChildren(
+                    criar("p", "painel-rotulo", "Chamando agora"),
+                    criar("p", "painel-nome", dados.atual.nome),
+                    criar("p", "painel-detalhe",
+                        `${dados.atual.prioridade} · chamado às ${dados.atual.hora}`)
+                );
+            } else {
+                atual.replaceChildren(criar("p", "painel-rotulo", "Aguarde ser chamado"));
+            }
+
+            // Alguém novo foi chamado? Faz o destaque piscar.
+            const novaChave = dados.atual ? dados.atual.chave : null;
+            if (novaChave && novaChave !== chaveAtual) {
+                atual.classList.remove("piscando");
+                void atual.offsetWidth; // "reinicia" a animação do CSS
+                atual.classList.add("piscando");
+            }
+            chaveAtual = novaChave;
+
+            document.getElementById("anteriores").replaceChildren(
+                ...dados.anteriores.map(chamada => {
+                    const item = criar("li", null, chamada.nome + " ");
+                    item.append(criar("span", null, chamada.hora));
+                    return item;
+                })
+            );
+
+            document.getElementById("aguardando").textContent = dados.aguardando;
+        }
+
+        async function atualizar() {
+            try {
+                const resposta = await fetch("{{ url_for('painel_dados') }}");
+                if (resposta.ok) {
+                    desenhar(await resposta.json());
+                }
+            } catch (erro) {
+                // Servidor fora do ar ou rede caiu: mantém a tela como
+                // está e tenta de novo na próxima rodada.
+            }
+        }
+
+        function atualizarRelogio() {
+            document.getElementById("relogio").textContent =
+                new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        }
+
+        atualizarRelogio();
+        setInterval(atualizarRelogio, 1000);
+        setInterval(atualizar, INTERVALO);
+    </script>
+
+</body>
+
+</html>
