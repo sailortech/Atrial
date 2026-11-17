@@ -351,7 +351,7 @@ def painel_dados():
 @app.route("/pacientes/editar/<int:id>", methods=["GET", "POST"])
 def editar_paciente(id):
 
-    paciente = Paciente.query.get_or_404(id)
+    paciente = db.get_or_404(Paciente, id)
 
     if request.method == "POST":
 
@@ -397,7 +397,7 @@ def chamar_proximo():
 
 @app.route("/pacientes/finalizar/<int:id>", methods=["POST"])
 def finalizar_atendimento(id):
-    paciente = Paciente.query.get_or_404(id)
+    paciente = db.get_or_404(Paciente, id)
 
     if paciente.status == "Em atendimento":
         paciente.status = "Concluído"
@@ -410,7 +410,7 @@ def finalizar_atendimento(id):
 
 @app.route("/pacientes/excluir/<int:id>", methods=["POST"])
 def excluir_paciente(id):
-    paciente = Paciente.query.get_or_404(id)
+    paciente = db.get_or_404(Paciente, id)
 
     # Guarda o nome antes: depois de excluído, o objeto não pode mais ser lido
     nome = paciente.nome
