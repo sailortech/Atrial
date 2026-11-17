@@ -276,8 +276,15 @@ def pacientes():
         Paciente.id.desc()
     ).all()
 
+    # ?parcial=1: o JavaScript da página só quer as listas atualizadas,
+    # sem cabeçalho, menu etc. (veja _listas_pacientes.html)
+    if request.args.get("parcial"):
+        template = "_listas_pacientes.html"
+    else:
+        template = "pacientes.html"
+
     return render_template(
-        "pacientes.html",
+        template,
         termo=termo,
         em_atendimento=em_atendimento,
         fila=fila,

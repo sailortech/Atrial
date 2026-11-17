@@ -1,0 +1,159 @@
+{# Parte da página de pacientes que se atualiza sozinha.
+   Usado de dois jeitos:
+     - incluído em pacientes.html (página normal);
+     - sozinho, quando o JavaScript pede /pacientes?parcial=1.
+   data-fila diz quantos estão na fila completa (para o botão "Chamar próximo"). #}
+<div id="listas" data-fila="{{ posicoes|length }}">
+
+{% if termo %}
+<p class="busca-ativa">
+    Mostrando resultados para <strong>"{{ termo }}"</strong>
+    ({{ em_atendimento|length + fila|length + concluidos|length }} encontrados).
+    <a href="{{ url_for('pacientes') }}">Limpar busca</a>
+</p>
+{% endif %}
+
+<!-- ===== Em atendimento ===== -->
+<section>
+    <h3>Em atendimento ({{ em_atendimento|length }})</h3>
+
+    {% if em_atendimento %}
+    <table>
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Prioridade</th>
+                <th>Chamado às</th>
+                <th>Esperou</th>
+                <th>CPF</th>
+                <th>Observações</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for paciente in em_atendimento %}
+            <tr class="status-em-atendimento">
+                <td>{{ paciente.nome }}</td>
+                <td class="prioridade-{{ paciente.prioridade|lower }}">
+                    {{ paciente.prioridade }}
+                </td>
+                <td>{{ paciente.chamado_em|hora }}</td>
+                <td>{{ paciente.chegada|duracao(paciente.chamado_em) }}</td>
+                <td>{{ paciente.cpf|cpf }}</td>
+                <td>{{ paciente.observacoes or "-" }}</td>
+                <td>
+                    <form method="POST"
+                          action="{{ url_for('finalizar_atendimento', id=paciente.id) }}">
+                        <button type="submit">Concluir</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="vazio">Ninguém sendo atendido no momento.</p>
+    {% endif %}
+</section>
+
+<!-- ===== Fila de espera ===== -->
+<section>
+    <h3>Fila de espera ({{ fila|length }})</h3>
+
+    {% if fila %}
+    <table>
+        <thead>
+            <tr>
+                <th>Posição</th>
+                <th>Nome</th>
+                <th>Prioridade</th>
+                <th>Chegada</th>
+                <th>Esperando há</th>
+                <th>Nascimento</th>
+                <th>CPF</th>
+                <th>Telefone</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for paciente in fila %}
+            <tr>
+                <td>{{ posicoes[paciente.id] }}º</td>
+                <td>{{ paciente.nome }}</td>
+                <td class="prioridade-{{ paciente.prioridade|lower }}">
+                    {{ paciente.prioridade }}
+                </td>
+                <td>{{ paciente.chegada|hora }}</td>
+                <td>{{ paciente.chegada|duracao }}</td>
+                <td>{{ paciente.nascimento }}</td>
+                <td>{{ paciente.cpf|cpf }}</td>
+                <td>{{ paciente.telefone or "-" }}</td>
+                <td>
+                    <a href="{{ url_for('editar_paciente', id=paciente.id) }}">
+                        <button type="button">Editar</button>
+                    </a>
+                    <form method="POST"
+                          action="{{ url_for('excluir_paciente', id=paciente.id) }}"
+                          onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');">
+                        <button type="submit">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="vazio">A fila está vazia.</p>
+    {% endif %}
+</section>
+
+<!-- ===== Histórico ===== -->
+<section>
+    <h3>Histórico de atendimentos ({{ concluidos|length }})</h3>
+
+    {% if concluidos %}
+    <table class="historico">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Prioridade</th>
+                <th>Data</th>
+                <th>Esperou</th>
+                <th>Duração</th>
+                <th>CPF</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for paciente in concluidos %}
+            <tr>
+                <td>{{ paciente.nome }}</td>
+                <td>{{ paciente.prioridade }}</td>
+                <td>
+                    {% if paciente.concluido_em %}
+                        {{ paciente.concluido_em.strftime("%d/%m %H:%M") }}
+                    {% else %}-{% endif %}
+                </td>
+                <td>{{ paciente.chegada|duracao(paciente.chamado_em) }}</td>
+                <td>{{ paciente.chamado_em|duracao(paciente.concluido_em) }}</td>
+                <td>{{ paciente.cpf|cpf }}</td>
+                <td>
+                    <a href="{{ url_for('editar_paciente', id=paciente.id) }}">
+                        <button type="button">Editar</button>
+                    </a>
+                    <form method="POST"
+                          action="{{ url_for('excluir_paciente', id=paciente.id) }}"
+                          onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');">
+                        <button type="submit">Excluir</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="vazio">Nenhum atendimento concluído ainda.</p>
+    {% endif %}
+</section>
+
+</div>
