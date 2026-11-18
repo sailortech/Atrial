@@ -28,6 +28,11 @@ def app():
     """App com um banco vazio, criado do zero para cada teste."""
     flask_app.config["TESTING"] = True
 
+    # A maioria dos testes confere OUTRAS regras (fila, cadastro...),
+    # então desligamos o CSRF para não ter que pegar o código toda vez.
+    # Ele é testado ligado em test_csrf.py (fixture csrf_ligado).
+    flask_app.config["WTF_CSRF_ENABLED"] = False
+
     with flask_app.app_context():
         db.create_all()
         yield flask_app      # aqui o teste roda

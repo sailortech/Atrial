@@ -35,6 +35,7 @@
             </a>
 
             <form method="POST" action="{{ url_for('logout') }}" class="sair">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <span>{{ current_user.nome }}</span>
                 <button type="submit">Sair</button>
             </form>

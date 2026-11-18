@@ -44,6 +44,7 @@
                 <td>
                     <form method="POST"
                           action="{{ url_for('finalizar_atendimento', id=paciente.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit">Concluir</button>
                     </form>
                 </td>
@@ -95,6 +96,7 @@
                     <form method="POST"
                           action="{{ url_for('excluir_paciente', id=paciente.id) }}"
                           onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit">Excluir</button>
                     </form>
                 </td>
@@ -144,6 +146,7 @@
                     <form method="POST"
                           action="{{ url_for('excluir_paciente', id=paciente.id) }}"
                           onsubmit="return confirm('Tem certeza que deseja excluir este paciente?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit">Excluir</button>
                     </form>
                 </td>

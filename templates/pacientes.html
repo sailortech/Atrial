@@ -13,6 +13,7 @@
 <form method="POST"
       action="{{ url_for('chamar_proximo') }}"
       style="display: inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {# posicoes tem a fila inteira, mesmo durante uma busca #}
     <button type="submit" id="chamar-proximo" {% if not posicoes %}disabled{% endif %}>
         Chamar próximo

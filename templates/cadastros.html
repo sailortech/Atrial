@@ -7,6 +7,7 @@
 <h2>Cadastrar paciente</h2>
 
 <form method="POST" action="{{ url_for('cadastro_paciente') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     {% include "_campos_paciente.html" %}
 

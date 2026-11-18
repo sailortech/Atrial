@@ -9,6 +9,7 @@
 
     {# proxima vai junto na URL, para voltar à página que a pessoa queria #}
     <form method="POST" action="{{ url_for('login', proxima=proxima) if proxima else url_for('login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="login">Usuário</label>
         <input type="text" id="login" name="login" value="{{ login }}"
                autocomplete="username" autofocus required>

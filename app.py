@@ -12,6 +12,7 @@ from flask_login import (
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 from flask_migrate import Migrate
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -32,6 +33,17 @@ db = SQLAlchemy(app)
 # Migrations: cuidam das mudanças na estrutura do banco
 # (ex.: adicionar uma coluna) sem perder os dados.
 migrate = Migrate(app, db)
+
+# Proteção contra CSRF: todo formulário POST precisa mandar um código
+# secreto (csrf_token) que só as páginas do próprio Atrial conhecem.
+# Assim, um site malicioso aberto em outra aba não consegue enviar
+# formulários (excluir paciente, chamar próximo...) em seu nome.
+#
+# TIME_LIMIT = None: o código vale enquanto a pessoa estiver logada.
+# O padrão (1 hora) daria erro em quem deixa a página aberta o dia
+# todo na recepção e clica em "Chamar próximo" à tarde.
+app.config["WTF_CSRF_TIME_LIMIT"] = None
+csrf = CSRFProtect(app)
 
 
 def normalizar(texto):
@@ -343,6 +355,18 @@ def criar_usuario(login, nome, senha):
     db.session.commit()
 
     click.echo(f"Usuário '{login}' criado.")
+
+
+@app.errorhandler(CSRFError)
+def erro_csrf(erro):
+    """Formulário chegou sem o código ou com um código inválido.
+
+    Na prática quase sempre é inofensivo (ex.: a pessoa saiu e entrou
+    de novo em outra aba, e a página antiga ficou com o código velho).
+    Em vez da página de erro 400 do Flask, explicamos e recomeçamos.
+    """
+    flash("A página estava desatualizada. Confira e tente de novo.", "erro")
+    return redirect(url_for("pacientes"))
 
 
 # ---------- Rotas ----------
