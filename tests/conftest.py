@@ -17,6 +17,9 @@ from werkzeug.security import generate_password_hash
 # Precisa vir antes do "import app", que é quando a configuração é lida.
 os.environ["DATABASE_URL"] = "sqlite://"
 
+# Chave fixa nos testes: assim eles não criam o arquivo instance/secret_key
+os.environ["SECRET_KEY"] = "chave-so-para-testes"
+
 # Deixa o "import app" funcionar a partir da pasta tests/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

@@ -1,7 +1,9 @@
 import os
 import re
+import secrets
 import unicodedata
 from datetime import date, datetime
+from pathlib import Path
 
 import click
 from flask import Flask, render_template, request, redirect, url_for, flash
@@ -18,9 +20,36 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 app = Flask(__name__)
 
-# Chave usada para "assinar" a sessão do usuário (o flash depende dela).
-# Em produção, defina a variável de ambiente SECRET_KEY com um valor secreto.
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "chave-de-desenvolvimento")
+def carregar_chave_secreta(pasta):
+    """Devolve a SECRET_KEY, a chave que assina o cookie de login
+    e os códigos CSRF. Quem souber a chave consegue FORJAR um login,
+    então ela não pode estar no código (nem no GitHub).
+
+    1. Variável de ambiente SECRET_KEY, se existir (uso em servidor).
+    2. Senão, o arquivo <pasta>/secret_key; na primeira vez ele é
+       criado com uma chave aleatória. A pasta instance/ está no
+       .gitignore, então a chave nunca vai para o Git.
+    """
+    chave = os.environ.get("SECRET_KEY")
+    if chave:
+        return chave
+
+    arquivo = Path(pasta) / "secret_key"
+
+    if not arquivo.exists():
+        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        # secrets (e não random): feito para gerar valores imprevisíveis
+        arquivo.write_text(secrets.token_hex(32), encoding="utf-8")
+
+    return arquivo.read_text(encoding="utf-8").strip()
+
+
+app.config["SECRET_KEY"] = carregar_chave_secreta(app.instance_path)
+
+# O navegador só manda o cookie de login quando a navegação começa no
+# próprio Atrial (ou num link clicado). Formulários enviados por outros
+# sites vão sem cookie: mais uma barreira contra CSRF, além do csrf_token.
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # Configuração do banco de dados
 app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
