@@ -11,6 +11,7 @@ from app import (
     formatar_cpf,
     formatar_duracao,
     primeiro_nome_e_inicial,
+    normalizar,
 )
 
 
@@ -69,3 +70,14 @@ def test_formatar_duracao_sem_horario():
 ])
 def test_nome_abreviado_do_painel(nome, esperado):
     assert primeiro_nome_e_inicial(nome) == esperado
+
+
+@pytest.mark.parametrize("texto, esperado", [
+    ("João da CONCEIÇÃO", "joao da conceicao"),
+    ("Antônio Müller", "antonio muller"),
+    ("Ana", "ana"),
+    ("", ""),
+    (None, ""),
+])
+def test_normalizar_tira_acentos_e_maiusculas(texto, esperado):
+    assert normalizar(texto) == esperado

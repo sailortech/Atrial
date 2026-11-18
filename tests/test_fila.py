@@ -1,6 +1,8 @@
 """Testes com banco e rotas: ordem da fila, fluxo de status,
 cadastro, busca e painel."""
 
+import pytest
+
 from app import Paciente, buscar_por_status, db
 
 
@@ -136,6 +138,25 @@ def test_busca_por_nome_e_por_cpf(cliente, criar_paciente):
 
     por_cpf = cliente.get("/pacientes?q=111.444").get_data(as_text=True)
     assert "Bruno" in por_cpf and "Mariana" not in por_cpf
+
+
+@pytest.mark.parametrize("termo", ["joao", "JOÃO", "João", "conceicao", "CONCEIÇÃO"])
+def test_busca_ignora_acentos_e_maiusculas(cliente, criar_paciente, termo):
+    criar_paciente("João da Conceição")
+    criar_paciente("Bruno")
+
+    pagina = cliente.get(f"/pacientes?q={termo}").get_data(as_text=True)
+
+    assert "João da Conceição" in pagina and "Bruno" not in pagina
+
+
+def test_busca_acentuada_acha_nome_sem_acento(cliente, criar_paciente):
+    # Recepcionista digitou com acento, mas o cadastro foi feito sem
+    criar_paciente("Jose Antonio")
+
+    pagina = cliente.get("/pacientes?q=José Antônio").get_data(as_text=True)
+
+    assert "Jose Antonio" in pagina
 
 
 def test_busca_nao_muda_a_posicao_na_fila(cliente, criar_paciente):

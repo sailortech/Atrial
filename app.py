@@ -1,10 +1,12 @@
 import os
 import re
+import unicodedata
 from datetime import date, datetime
 
 from flask import Flask, render_template, request, redirect, url_for, flash
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import validates
 from flask_migrate import Migrate
 
 
@@ -25,6 +27,20 @@ db = SQLAlchemy(app)
 # Migrations: cuidam das mudanças na estrutura do banco
 # (ex.: adicionar uma coluna) sem perder os dados.
 migrate = Migrate(app, db)
+
+
+def normalizar(texto):
+    """Deixa o texto pronto para comparar: sem acentos e em minúsculas.
+
+    'João da CONCEIÇÃO' -> 'joao da conceicao'
+
+    NFKD separa a letra do acento ('ã' vira 'a' + '~'); depois
+    jogamos fora os acentos soltos (combining) e o casefold()
+    faz o papel do lower(), cobrindo mais idiomas.
+    """
+    separado = unicodedata.normalize("NFKD", texto or "")
+    sem_acento = "".join(c for c in separado if not unicodedata.combining(c))
+    return sem_acento.casefold()
 
 
 # Modelo do paciente
@@ -54,6 +70,18 @@ class Paciente(db.Model):
     chegada = db.Column(db.DateTime)       # entrou na fila
     chamado_em = db.Column(db.DateTime)    # foi chamado para atendimento
     concluido_em = db.Column(db.DateTime)  # atendimento terminou
+
+    # Nome sem acentos e em minúsculas, só para a busca:
+    # "João da Conceição" -> "joao da conceicao". Nunca é mostrado na tela.
+    nome_busca = db.Column(db.String(100))
+
+    @validates("nome")
+    def _preencher_nome_busca(self, chave, nome):
+        # Roda sozinho sempre que alguém faz paciente.nome = ...
+        # (no cadastro, na edição...), então as duas colunas nunca
+        # ficam diferentes uma da outra.
+        self.nome_busca = normalizar(nome)
+        return nome
 
 
 PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
@@ -240,8 +268,13 @@ def filtrar_busca(consulta, termo):
     if not termo:
         return consulta
 
+    # Compara versões normalizadas dos dois lados: 'joao' acha 'João'
+    # e 'José' acha 'Jose'. (O SQLite sozinho só ignora maiúsculas
+    # em letras sem acento: para ele, 'ã' e 'Ã' são diferentes.)
     # autoescape: um '%' ou '_' digitado é tratado como texto comum
-    condicoes = [Paciente.nome.icontains(termo, autoescape=True)]
+    condicoes = [
+        Paciente.nome_busca.contains(normalizar(termo), autoescape=True)
+    ]
 
     digitos = somente_digitos(termo)
     if digitos:
