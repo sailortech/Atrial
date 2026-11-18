@@ -14,6 +14,11 @@
 
     <div class="painel-topo">
         <span>Atrial</span>
+        {# Navegadores só deixam a página tocar som depois de um clique
+           de alguém. Por isso o botão: clica-se uma vez ao ligar a TV. #}
+        <button type="button" id="ativar-som" class="painel-som">
+            🔇 Ativar som
+        </button>
         <span id="relogio">--:--</span>
     </div>
 
@@ -84,6 +89,7 @@
                 atual.classList.remove("piscando");
                 void atual.offsetWidth; // "reinicia" a animação do CSS
                 atual.classList.add("piscando");
+                tocarAviso();
             }
             chaveAtual = novaChave;
 
@@ -109,6 +115,42 @@
                 // está e tenta de novo na próxima rodada.
             }
         }
+
+        // ----- Som -----
+        // Web Audio: o próprio navegador gera o som (uma onda senoidal),
+        // então não precisamos de nenhum arquivo .mp3.
+        let audio = null; // continua null enquanto o som não for ativado
+
+        function tocarNota(frequencia, inicio, duracao) {
+            const oscilador = audio.createOscillator(); // gera a onda
+            const volume = audio.createGain();          // controla o volume
+
+            oscilador.type = "sine";
+            oscilador.frequency.value = frequencia; // em Hz: mais alto = mais agudo
+
+            // Começa no volume 0.3 e vai sumindo (soa como um sino)
+            const t = audio.currentTime + inicio;
+            volume.gain.setValueAtTime(0.3, t);
+            volume.gain.exponentialRampToValueAtTime(0.001, t + duracao);
+
+            oscilador.connect(volume).connect(audio.destination);
+            oscilador.start(t);
+            oscilador.stop(t + duracao);
+        }
+
+        function tocarAviso() {
+            if (!audio) return;
+            // "Plim-plom": duas notas, a primeira mais aguda (Mi e Dó)
+            tocarNota(659, 0, 0.6);
+            tocarNota(523, 0.35, 0.9);
+        }
+
+        document.getElementById("ativar-som").addEventListener("click", function () {
+            // Este clique é a "permissão" que o navegador exige
+            audio = new AudioContext();
+            tocarAviso(); // toca uma vez, para confirmar que está funcionando
+            this.remove(); // o botão já cumpriu seu papel
+        });
 
         function atualizarRelogio() {
             document.getElementById("relogio").textContent =
