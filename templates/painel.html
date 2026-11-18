@@ -26,6 +26,9 @@
         {% if dados.atual %}
         <p class="painel-rotulo">Chamando agora</p>
         <p class="painel-nome">{{ dados.atual.nome }}</p>
+        {% if dados.atual.local %}
+        <p class="painel-local">→ {{ dados.atual.local }}</p>
+        {% endif %}
         <p class="painel-detalhe">
             {{ dados.atual.prioridade }} · chamado às {{ dados.atual.hora }}
         </p>
@@ -39,7 +42,10 @@
             <p class="painel-rotulo">Últimas chamadas</p>
             <ul id="anteriores">
                 {% for chamada in dados.anteriores %}
-                <li>{{ chamada.nome }} <span>{{ chamada.hora }}</span></li>
+                <li>
+                    {{ chamada.nome }}{% if chamada.local %} → {{ chamada.local }}{% endif %}
+                    <span>{{ chamada.hora }}</span>
+                </li>
                 {% endfor %}
             </ul>
         </div>
@@ -76,6 +82,10 @@
                 atual.replaceChildren(
                     criar("p", "painel-rotulo", "Chamando agora"),
                     criar("p", "painel-nome", dados.atual.nome),
+                    // Chamadas antigas não têm local: aí a linha não aparece
+                    ...(dados.atual.local
+                        ? [criar("p", "painel-local", `→ ${dados.atual.local}`)]
+                        : []),
                     criar("p", "painel-detalhe",
                         `${dados.atual.prioridade} · chamado às ${dados.atual.hora}`)
                 );
@@ -95,7 +105,8 @@
 
             document.getElementById("anteriores").replaceChildren(
                 ...dados.anteriores.map(chamada => {
-                    const item = criar("li", null, chamada.nome + " ");
+                    const destino = chamada.local ? ` → ${chamada.local}` : "";
+                    const item = criar("li", null, chamada.nome + destino + " ");
                     item.append(criar("span", null, chamada.hora));
                     return item;
                 })

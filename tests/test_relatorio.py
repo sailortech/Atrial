@@ -151,3 +151,20 @@ def test_formatar_minutos():
     assert formatar_minutos(None) == "-"
     assert formatar_minutos(20.7) == "20 min"
     assert formatar_minutos(75) == "1h 15min"
+
+
+def test_atendimentos_por_local(criar_paciente):
+    criar_paciente("Ana", status="Concluído", local="Consultório 1", chegada=as_(8),
+                   chamado_em=as_(8, 10), concluido_em=as_(8, 30))   # 20 min
+    criar_paciente("Bruno", status="Concluído", local="Consultório 1", chegada=as_(9),
+                   chamado_em=as_(9, 10), concluido_em=as_(9, 50))   # 40 min
+    criar_paciente("Carla", status="Concluído", local="Triagem", chegada=as_(9),
+                   chamado_em=as_(9, 5), concluido_em=as_(9, 15))    # 10 min
+
+    linhas = {l["local"]: l for l in relatorio_do_dia(DIA)["por_local"]}
+
+    assert linhas["Consultório 1"]["atendidos"] == 2
+    assert linhas["Consultório 1"]["duracao_media"] == 30
+    assert linhas["Triagem"]["atendidos"] == 1
+    assert linhas["Consultório 2"]["atendidos"] == 0
+    assert linhas["Consultório 2"]["duracao_media"] is None

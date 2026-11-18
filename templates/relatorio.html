@@ -127,6 +127,29 @@
     </table>
 </section>
 
+<!-- ===== Por local ===== -->
+<section>
+    <h3>Por local</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Local</th>
+                <th>Atendimentos concluídos</th>
+                <th>Duração média</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for linha in dados.por_local %}
+            <tr>
+                <td>{{ linha.local }}</td>
+                <td>{{ linha.atendidos }}</td>
+                <td>{{ linha.duracao_media|minutos }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
 {% if grafico %}
 <script>
     // Dica ao passar o mouse (ou navegar com Tab) por uma coluna

@@ -22,6 +22,7 @@
         <thead>
             <tr>
                 <th>Nome</th>
+                <th>Local</th>
                 <th>Prioridade</th>
                 <th>Chamado às</th>
                 <th>Esperou</th>
@@ -34,6 +35,7 @@
             {% for paciente in em_atendimento %}
             <tr class="status-em-atendimento">
                 <td>{{ paciente.nome }}</td>
+                <td>{{ paciente.local or "-" }}</td>
                 <td class="prioridade-{{ paciente.prioridade|lower }}">
                     {{ paciente.prioridade }}
                 </td>
@@ -118,6 +120,7 @@
         <thead>
             <tr>
                 <th>Nome</th>
+                <th>Local</th>
                 <th>Prioridade</th>
                 <th>Data</th>
                 <th>Esperou</th>
@@ -130,6 +133,7 @@
             {% for paciente in concluidos %}
             <tr>
                 <td>{{ paciente.nome }}</td>
+                <td>{{ paciente.local or "-" }}</td>
                 <td>{{ paciente.prioridade }}</td>
                 <td>
                     {% if paciente.concluido_em %}

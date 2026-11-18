@@ -1,6 +1,8 @@
 """Testes com banco e rotas: ordem da fila, fluxo de status,
 cadastro, busca e painel."""
 
+from datetime import datetime
+
 import pytest
 
 from app import Paciente, buscar_por_status, db
@@ -35,7 +37,7 @@ def test_chamar_proximo_pega_o_mais_prioritario(cliente, criar_paciente):
     criar_paciente("Ana")
     criar_paciente("Bruno", prioridade="Urgente")
 
-    cliente.post("/pacientes/chamar-proximo")
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
 
     bruno = Paciente.query.filter_by(nome="Bruno").one()
     assert bruno.status == "Em atendimento"
@@ -44,7 +46,7 @@ def test_chamar_proximo_pega_o_mais_prioritario(cliente, criar_paciente):
 
 
 def test_chamar_proximo_com_fila_vazia_avisa(cliente):
-    resposta = cliente.post("/pacientes/chamar-proximo", follow_redirects=True)
+    resposta = cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"}, follow_redirects=True)
 
     assert "Não há pacientes aguardando" in resposta.get_data(as_text=True)
 
@@ -52,7 +54,7 @@ def test_chamar_proximo_com_fila_vazia_avisa(cliente):
 def test_fluxo_completo_aguardando_atendimento_concluido(cliente, criar_paciente):
     paciente = criar_paciente("Ana")
 
-    cliente.post("/pacientes/chamar-proximo")
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
     cliente.post(f"/pacientes/finalizar/{paciente.id}")
 
     db.session.refresh(paciente)  # relê do banco o que as rotas mudaram
@@ -183,8 +185,8 @@ def test_painel_mostra_o_ultimo_chamado(cliente, criar_paciente):
     criar_paciente("Ana Lima")
     criar_paciente("Bruno Costa")
 
-    cliente.post("/pacientes/chamar-proximo")  # Ana
-    cliente.post("/pacientes/chamar-proximo")  # Bruno
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})  # Ana
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})  # Bruno
 
     dados = cliente.get("/painel/dados").get_json()
 
@@ -197,3 +199,72 @@ def test_painel_vazio(cliente):
     dados = cliente.get("/painel/dados").get_json()
 
     assert dados == {"atual": None, "anteriores": [], "aguardando": 0}
+
+
+# ---------- Locais (guichês/consultórios) ----------
+
+def test_chamar_registra_o_local(cliente, criar_paciente):
+    paciente = criar_paciente("Ana")
+
+    resposta = cliente.post(
+        "/pacientes/chamar-proximo", data={"local": "Consultório 2"},
+        follow_redirects=True,
+    )
+
+    db.session.refresh(paciente)
+    assert paciente.local == "Consultório 2"
+    assert "para Consultório 2" in resposta.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("local", ["", "Sala Secreta"])
+def test_chamar_sem_local_valido_nao_chama_ninguem(cliente, criar_paciente, local):
+    paciente = criar_paciente("Ana")
+
+    resposta = cliente.post(
+        "/pacientes/chamar-proximo", data={"local": local}, follow_redirects=True
+    )
+
+    db.session.refresh(paciente)
+    assert paciente.status == "Aguardando"
+    assert "Escolha para qual local" in resposta.get_data(as_text=True)
+
+
+def test_ultimo_local_ja_vem_escolhido(cliente, criar_paciente):
+    criar_paciente("Ana")
+
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Consultório 3"})
+    pagina = cliente.get("/pacientes").get_data(as_text=True)
+
+    assert '<option value="Consultório 3" selected>' in pagina
+
+
+def test_primeira_vez_pede_para_escolher(cliente):
+    pagina = cliente.get("/pacientes").get_data(as_text=True)
+
+    assert "Chamar para..." in pagina
+    assert " selected>" not in pagina.replace("selected disabled>", "")
+
+
+def test_painel_mostra_o_local(cliente, criar_paciente):
+    criar_paciente("Ana Lima")
+    criar_paciente("Bruno Costa")
+
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Consultório 1"})
+
+    dados = cliente.get("/painel/dados").get_json()
+    assert dados["atual"]["local"] == "Consultório 1"
+    assert dados["anteriores"][0]["local"] == "Triagem"
+
+    html = cliente.get("/painel").get_data(as_text=True)
+    assert "→ Consultório 1" in html
+
+
+def test_painel_com_chamada_antiga_sem_local(cliente, criar_paciente):
+    criar_paciente("Antigo Silva", status="Em atendimento",
+                   chamado_em=datetime.now(), local=None)
+
+    html = cliente.get("/painel").get_data(as_text=True)
+
+    assert "Antigo S." in html
+    assert "→" not in html.split("<script>")[0]  # nada de "→ None"

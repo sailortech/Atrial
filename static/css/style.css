@@ -440,3 +440,36 @@ nav .sair button {
     cursor: pointer;
     color: var(--texto-secundario);
 }
+
+/* ===== Locais (guichês/consultórios) ===== */
+
+/* [Chamar para... ▾] [Chamar próximo] lado a lado */
+.chamar {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+}
+
+.chamar select {
+    width: auto;
+    margin-top: 15px; /* alinha com o botão, que tem margin-top */
+}
+
+/* No painel: o destino é o que a pessoa mais precisa ler */
+.painel-local {
+    margin: 0 0 16px;
+    font-size: clamp(2rem, 6vw, 4.5rem);
+    font-weight: bold;
+    color: #7fd1ae;
+}
+
+/* Páginas com tabelas largas (ex.: Pacientes) */
+main.largo {
+    max-width: 1200px;
+}
+
+/* Link em volta de um botão: sem o sublinhado que aparecia ao lado */
+a:has(> button) {
+    text-decoration: none;
+}

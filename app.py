@@ -6,7 +6,9 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import click
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import (
+    Flask, flash, redirect, render_template, request, session, url_for
+)
 
 from flask_login import (
     LoginManager, UserMixin, current_user, login_user, logout_user
@@ -117,6 +119,10 @@ class Paciente(db.Model):
     chamado_em = db.Column(db.DateTime)    # foi chamado para atendimento
     concluido_em = db.Column(db.DateTime)  # atendimento terminou
 
+    # Para onde o paciente foi chamado (um dos LOCAIS).
+    # Vazio em quem foi chamado antes de existir esta coluna.
+    local = db.Column(db.String(50))
+
     # Nome sem acentos e em minúsculas, só para a busca:
     # "João da Conceição" -> "joao da conceicao". Nunca é mostrado na tela.
     nome_busca = db.Column(db.String(100))
@@ -151,6 +157,11 @@ class Usuario(UserMixin, db.Model):
 
 
 PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
+
+# Para onde os pacientes podem ser chamados. Para mudar os locais
+# da clínica, basta editar esta lista (e reiniciar o servidor).
+LOCAIS = ["Triagem", "Consultório 1", "Consultório 2", "Consultório 3"]
+app.jinja_env.globals["LOCAIS"] = LOCAIS
 
 # Deixa a lista disponível em todos os templates
 app.jinja_env.globals["PRIORIDADES"] = PRIORIDADES
@@ -601,6 +612,18 @@ def relatorio_do_dia(dia):
         ),
         "por_prioridade": por_prioridade,
         "por_hora": por_hora,
+        # Quantos atendimentos cada local concluiu no dia
+        "por_local": [
+            {
+                "local": local,
+                "atendidos": sum(1 for p in concluidos if p.local == local),
+                "duracao_media": media(
+                    minutos_entre(p.chamado_em, p.concluido_em)
+                    for p in concluidos if p.local == local
+                ),
+            }
+            for local in LOCAIS
+        ],
     }
 
 
@@ -731,6 +754,7 @@ def dados_do_painel():
             "nome": primeiro_nome_e_inicial(paciente.nome),
             "prioridade": paciente.prioridade,
             "hora": formatar_hora(paciente.chamado_em),
+            "local": paciente.local,  # None em chamadas antigas
         }
 
     return {
@@ -786,13 +810,27 @@ def editar_paciente(id):
 @app.route("/pacientes/chamar-proximo", methods=["POST"])
 def chamar_proximo():
 
+    local = request.form.get("local", "")
+
+    if local not in LOCAIS:
+        flash("Escolha para qual local o paciente será chamado.", "erro")
+        return redirect(url_for("pacientes"))
+
+    # Lembra o local escolhido (na sessão de quem está logado):
+    # quem atende no Consultório 2 não precisa escolhê-lo toda vez.
+    session["ultimo_local"] = local
+
     paciente = buscar_por_status("Aguardando").first()
 
     if paciente:
         paciente.status = "Em atendimento"
         paciente.chamado_em = datetime.now()
+        paciente.local = local
         db.session.commit()
-        flash(f"Chamando {paciente.nome} ({paciente.prioridade}).", "sucesso")
+        flash(
+            f"Chamando {paciente.nome} ({paciente.prioridade}) para {local}.",
+            "sucesso"
+        )
     else:
         flash("Não há pacientes aguardando na fila.", "erro")
 

@@ -47,7 +47,8 @@
         {% endif %}
     </header>
 
-    <main>
+    {# Uma página pode pedir mais espaço com {% block largura %}largo{% endblock %} #}
+    <main class="{% block largura %}{% endblock %}">
         {# Mensagens do flash(): aparecem uma vez e somem #}
         {% with mensagens = get_flashed_messages(with_categories=true) %}
         {% for categoria, texto in mensagens %}
