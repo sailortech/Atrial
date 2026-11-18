@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block titulo %}Relatório{% endblock %}
+
+{% block conteudo %}
+
+<h2>Relatório do dia</h2>
+
+<!-- ===== Escolha do dia ===== -->
+<form method="GET" action="{{ url_for('relatorio') }}" class="relatorio-dia">
+    <a href="{{ url_for('relatorio', dia=anterior.isoformat()) }}">← Anterior</a>
+
+    {# onchange: muda de dia assim que a data é escolhida #}
+    <input type="date" name="dia" value="{{ dados.dia.isoformat() }}"
+           max="{{ hoje.isoformat() }}" onchange="this.form.submit()">
+
+    {% if dados.dia < hoje %}
+    <a href="{{ url_for('relatorio', dia=seguinte.isoformat()) }}">Seguinte →</a>
+    {% endif %}
+</form>
+
+<!-- ===== Números do dia ===== -->
+<div class="indicadores">
+    <div class="indicador">
+        <span class="indicador-rotulo">Chegaram</span>
+        <span class="indicador-valor">{{ dados.chegaram }}</span>
+    </div>
+    <div class="indicador">
+        <span class="indicador-rotulo">Atendidos</span>
+        <span class="indicador-valor">{{ dados.atendidos }}</span>
+    </div>
+    <div class="indicador">
+        <span class="indicador-rotulo">Espera média</span>
+        <span class="indicador-valor">{{ dados.espera_media|minutos }}</span>
+        <span class="indicador-extra">maior: {{ dados.maior_espera|minutos }}</span>
+    </div>
+    <div class="indicador">
+        <span class="indicador-rotulo">Duração média</span>
+        <span class="indicador-valor">{{ dados.duracao_media|minutos }}</span>
+        <span class="indicador-extra">por atendimento</span>
+    </div>
+</div>
+
+<!-- ===== Gráfico: chegadas por hora ===== -->
+<section class="grafico">
+    <h3>Chegadas por hora</h3>
+
+    {% if grafico %}
+    {# O desenho é calculado em grafico_por_hora() no app.py;
+       aqui só colocamos cada peça no lugar. #}
+    <div class="grafico-area">
+        <svg viewBox="0 0 {{ grafico.largura }} {{ grafico.altura }}"
+             role="img" aria-label="Gráfico de barras: chegadas de pacientes por hora">
+
+            {# Linhas de grade, bem claras, com os números do eixo #}
+            {% for marca in grafico.marcas %}
+            <line class="grade" x1="{{ grafico.esquerda }}" x2="{{ grafico.direita }}"
+                  y1="{{ marca.y }}" y2="{{ marca.y }}"></line>
+            <text class="eixo" x="{{ grafico.esquerda - 8 }}" y="{{ marca.y }}"
+                  text-anchor="end" dominant-baseline="middle">{{ marca.valor }}</text>
+            {% endfor %}
+
+            {% for barra in grafico.barras %}
+            <g class="coluna" tabindex="0"
+               data-hora="{{ '%02d'|format(barra.hora) }}h"
+               data-total="{{ barra.total }}"
+               aria-label="{{ '%02d'|format(barra.hora) }}h: {{ barra.total }} chegada(s)">
+                {# Área invisível do tamanho da coluna: fácil de acertar com o mouse #}
+                <rect class="alvo" x="{{ barra.alvo_x }}" y="{{ grafico.topo }}"
+                      width="{{ barra.alvo_largura }}"
+                      height="{{ grafico.chao - grafico.topo }}"></rect>
+                {% if barra.caminho %}
+                <path class="barra" d="{{ barra.caminho }}"></path>
+                {% endif %}
+                <text class="eixo" x="{{ barra.centro }}" y="{{ grafico.chao + 18 }}"
+                      text-anchor="middle">{{ barra.hora }}h</text>
+            </g>
+            {% endfor %}
+
+            <line class="chao" x1="{{ grafico.esquerda }}" x2="{{ grafico.direita }}"
+                  y1="{{ grafico.chao }}" y2="{{ grafico.chao }}"></line>
+        </svg>
+
+        <div class="dica" id="dica" hidden></div>
+    </div>
+
+    {# Os mesmos números em tabela: para quem não enxerga bem o gráfico,
+       usa leitor de tela, ou só quer o valor exato #}
+    <details>
+        <summary>Ver como tabela</summary>
+        <table>
+            <thead><tr><th>Hora</th><th>Chegadas</th></tr></thead>
+            <tbody>
+                {% for barra in grafico.barras if barra.total %}
+                <tr><td>{{ '%02d'|format(barra.hora) }}h</td><td>{{ barra.total }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </details>
+    {% else %}
+    <p class="vazio">Nenhuma chegada registrada neste dia.</p>
+    {% endif %}
+</section>
+
+<!-- ===== Por prioridade ===== -->
+<section>
+    <h3>Por prioridade</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Prioridade</th>
+                <th>Chegaram</th>
+                <th>Chamados</th>
+                <th>Espera média</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for linha in dados.por_prioridade %}
+            <tr>
+                <td class="prioridade-{{ linha.prioridade|lower }}">{{ linha.prioridade }}</td>
+                <td>{{ linha.chegaram }}</td>
+                <td>{{ linha.chamados }}</td>
+                <td>{{ linha.espera_media|minutos }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% if grafico %}
+<script>
+    // Dica ao passar o mouse (ou navegar com Tab) por uma coluna
+    const dica = document.getElementById("dica");
+    const area = document.querySelector(".grafico-area");
+
+    function mostrar(coluna) {
+        const total = Number(coluna.dataset.total);
+        dica.textContent = `${coluna.dataset.hora}: ${total} ${total === 1 ? "chegada" : "chegadas"}`;
+        dica.hidden = false;
+
+        // Posiciona a dica em cima do centro da coluna
+        const caixa = coluna.getBoundingClientRect();
+        const fundo = area.getBoundingClientRect();
+        dica.style.left = `${caixa.left - fundo.left + caixa.width / 2}px`;
+        dica.style.top = `${caixa.top - fundo.top}px`;
+    }
+
+    document.querySelectorAll(".coluna").forEach(coluna => {
+        coluna.addEventListener("mouseenter", () => mostrar(coluna));
+        coluna.addEventListener("focus", () => mostrar(coluna));
+        coluna.addEventListener("mouseleave", () => { dica.hidden = true; });
+        coluna.addEventListener("blur", () => { dica.hidden = true; });
+    });
+</script>
+{% endif %}
+
+{% endblock %}

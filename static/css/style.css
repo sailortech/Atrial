@@ -323,3 +323,120 @@ nav .sair button {
     padding: 4px 10px;
     font-size: 14px;
 }
+
+/* ===== Relatório ===== */
+
+/* Cores do gráfico num lugar só (azul = série 1 da paleta) */
+:root {
+    --serie-1: #2a78d6;
+    --texto-secundario: #52514e;
+    --grade: #e6e5e2;
+}
+
+.relatorio-dia {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+}
+
+.relatorio-dia input {
+    width: auto;
+}
+
+/* Linha de números de destaque */
+.indicadores {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 30px;
+}
+
+.indicador {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 16px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.indicador-rotulo {
+    color: var(--texto-secundario);
+    font-size: 14px;
+}
+
+.indicador-valor {
+    font-size: 32px;
+    font-weight: bold;
+}
+
+.indicador-extra {
+    color: var(--texto-secundario);
+    font-size: 14px;
+}
+
+/* Gráfico */
+.grafico-area {
+    position: relative; /* referência para posicionar a dica */
+}
+
+.grafico svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.grafico .grade {
+    stroke: var(--grade);
+    stroke-width: 1;
+}
+
+.grafico .chao {
+    stroke: #bbb;
+    stroke-width: 1;
+}
+
+.grafico .eixo {
+    fill: var(--texto-secundario);
+    font-size: 12px;
+}
+
+.grafico .barra {
+    fill: var(--serie-1);
+}
+
+.grafico .alvo {
+    fill: transparent;
+}
+
+.grafico .coluna {
+    cursor: default;
+    outline: none;
+}
+
+/* Coluna em foco/hover: um fundo leve marca qual está sendo lida */
+.grafico .coluna:hover .alvo,
+.grafico .coluna:focus-visible .alvo {
+    fill: rgba(0, 0, 0, 0.04);
+}
+
+.dica {
+    position: absolute;
+    transform: translate(-50%, calc(-100% - 6px));
+    padding: 6px 10px;
+    background: #222;
+    color: #fff;
+    font-size: 14px;
+    border-radius: 4px;
+    white-space: nowrap;
+    pointer-events: none; /* não "rouba" o mouse da coluna */
+}
+
+.grafico details {
+    margin-top: 12px;
+}
+
+.grafico summary {
+    cursor: pointer;
+    color: var(--texto-secundario);
+}

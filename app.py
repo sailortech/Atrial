@@ -2,7 +2,7 @@ import os
 import re
 import secrets
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import click
@@ -212,7 +212,16 @@ def formatar_duracao(inicio, fim=None):
         return "-"
 
     fim = fim or datetime.now()
-    minutos = int((fim - inicio).total_seconds() // 60)
+    return formatar_minutos((fim - inicio).total_seconds() / 60)
+
+
+@app.template_filter("minutos")
+def formatar_minutos(minutos):
+    """{{ 135|minutos }} -> 2h 15min   (None -> '-')"""
+    if minutos is None:
+        return "-"
+
+    minutos = int(minutos)
 
     if minutos < 1:
         return "menos de 1 min"
@@ -513,6 +522,178 @@ def pacientes():
         fila=fila,
         posicoes=posicoes,
         concluidos=concluidos
+    )
+
+
+# ---------- Relatório do dia ----------
+
+def minutos_entre(inicio, fim):
+    """Minutos entre dois horários; None se faltar algum deles."""
+    if inicio is None or fim is None:
+        return None
+    return (fim - inicio).total_seconds() / 60
+
+
+def media(valores):
+    valores = [v for v in valores if v is not None]
+    return sum(valores) / len(valores) if valores else None
+
+
+def no_dia(momento, dia):
+    return momento is not None and momento.date() == dia
+
+
+def relatorio_do_dia(dia):
+    """Números de um dia de atendimento. Devolve um dicionário.
+
+    Cada número usa o horário que faz sentido para ele:
+    - chegaram: quem CHEGOU no dia
+    - espera: quem foi CHAMADO no dia (chegada -> chamada)
+    - atendidos/duração: quem foi CONCLUÍDO no dia (chamada -> conclusão)
+    """
+    inicio = datetime.combine(dia, datetime.min.time())
+    fim = inicio + timedelta(days=1)
+
+    def entre(coluna):
+        return coluna >= inicio, coluna < fim
+
+    # Todo mundo que teve ALGUM momento no dia. As contas são feitas
+    # em Python (e não em SQL) por serem mais fáceis de ler; para o
+    # movimento de um dia, são poucas linhas.
+    pacientes = Paciente.query.filter(db.or_(
+        db.and_(*entre(Paciente.chegada)),
+        db.and_(*entre(Paciente.chamado_em)),
+        db.and_(*entre(Paciente.concluido_em)),
+    )).all()
+
+    chegaram = [p for p in pacientes if no_dia(p.chegada, dia)]
+    chamados = [p for p in pacientes if no_dia(p.chamado_em, dia)]
+    concluidos = [p for p in pacientes if no_dia(p.concluido_em, dia)]
+
+    esperas = [minutos_entre(p.chegada, p.chamado_em) for p in chamados]
+    esperas = [e for e in esperas if e is not None]
+
+    por_prioridade = []
+    for prioridade in PRIORIDADES:
+        do_grupo = [p for p in chamados if p.prioridade == prioridade]
+        por_prioridade.append({
+            "prioridade": prioridade,
+            "chegaram": sum(1 for p in chegaram if p.prioridade == prioridade),
+            "chamados": len(do_grupo),
+            "espera_media": media(
+                minutos_entre(p.chegada, p.chamado_em) for p in do_grupo
+            ),
+        })
+
+    # Chegadas por hora: {8: 3, 9: 5, ...}
+    por_hora = {}
+    for p in chegaram:
+        por_hora[p.chegada.hour] = por_hora.get(p.chegada.hour, 0) + 1
+
+    return {
+        "dia": dia,
+        "chegaram": len(chegaram),
+        "atendidos": len(concluidos),
+        "espera_media": media(esperas),
+        "maior_espera": max(esperas) if esperas else None,
+        "duracao_media": media(
+            minutos_entre(p.chamado_em, p.concluido_em) for p in concluidos
+        ),
+        "por_prioridade": por_prioridade,
+        "por_hora": por_hora,
+    }
+
+
+def grafico_por_hora(por_hora):
+    """Calcula o desenho (em SVG) do gráfico de chegadas por hora.
+
+    Devolve as medidas prontas; o template só desenha. Fazer a
+    conta aqui deixa o template simples e permite testar.
+    """
+    if not por_hora:
+        return None
+
+    # Pelo menos o horário comercial, e mais se houve movimento fora dele
+    horas = list(range(min(7, *por_hora), max(18, *por_hora) + 1))
+
+    largura, altura = 720, 240
+    esquerda, direita, topo, base = 36, 8, 12, 28
+    area_l = largura - esquerda - direita
+    area_a = altura - topo - base
+
+    # Topo do eixo: um número "redondo" com no máximo ~5 marcas
+    maior = max(por_hora.values())
+    passo = next(p for p in (1, 2, 5, 10, 20, 50, 100) if maior / p <= 5)
+    topo_eixo = -(-maior // passo) * passo  # arredonda para cima
+
+    def y(valor):
+        return topo + area_a - valor / topo_eixo * area_a
+
+    coluna = area_l / len(horas)
+    barra_l = min(coluna * 0.6, 32)  # barras finas
+
+    barras = []
+    for i, hora in enumerate(horas):
+        total = por_hora.get(hora, 0)
+        x = esquerda + i * coluna + (coluna - barra_l) / 2
+        barras.append({
+            "hora": hora,
+            "total": total,
+            "x": round(x, 1),
+            "largura": round(barra_l, 1),
+            "caminho": caminho_barra(x, y(total), barra_l, y(0)) if total else None,
+            # Área de passar o mouse: a coluna inteira, maior que a barra
+            "alvo_x": round(esquerda + i * coluna, 1),
+            "alvo_largura": round(coluna, 1),
+            "centro": round(esquerda + i * coluna + coluna / 2, 1),
+        })
+
+    return {
+        "largura": largura,
+        "altura": altura,
+        "esquerda": esquerda,
+        "direita": largura - direita,
+        "topo": topo,
+        "chao": y(0),
+        "marcas": [
+            {"valor": v, "y": round(y(v), 1)}
+            for v in range(0, topo_eixo + 1, passo)
+        ],
+        "barras": barras,
+    }
+
+
+def caminho_barra(x, y_topo, largura, y_chao):
+    """Contorno de uma barra com só os cantos de CIMA arredondados
+    (a base fica reta, "apoiada" no eixo)."""
+    r = min(4, largura / 2, y_chao - y_topo)
+    return (
+        f"M{x:.1f},{y_chao:.1f} "
+        f"V{y_topo + r:.1f} "
+        f"Q{x:.1f},{y_topo:.1f} {x + r:.1f},{y_topo:.1f} "
+        f"H{x + largura - r:.1f} "
+        f"Q{x + largura:.1f},{y_topo:.1f} {x + largura:.1f},{y_topo + r:.1f} "
+        f"V{y_chao:.1f} Z"
+    )
+
+
+@app.route("/relatorio")
+def relatorio():
+    # ?dia=2026-11-18 escolhe o dia; sem nada, é hoje
+    try:
+        dia = date.fromisoformat(request.args.get("dia", ""))
+    except ValueError:
+        dia = date.today()
+
+    dados = relatorio_do_dia(dia)
+
+    return render_template(
+        "relatorio.html",
+        dados=dados,
+        grafico=grafico_por_hora(dados["por_hora"]),
+        anterior=dia - timedelta(days=1),
+        seguinte=dia + timedelta(days=1),
+        hoje=date.today(),
     )
 
 
