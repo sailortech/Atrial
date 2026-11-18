@@ -3,11 +3,16 @@ import re
 import unicodedata
 from datetime import date, datetime
 
+import click
 from flask import Flask, render_template, request, redirect, url_for, flash
 
+from flask_login import (
+    LoginManager, UserMixin, current_user, login_user, logout_user
+)
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 from flask_migrate import Migrate
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 app = Flask(__name__)
@@ -82,6 +87,26 @@ class Paciente(db.Model):
         # ficam diferentes uma da outra.
         self.nome_busca = normalizar(nome)
         return nome
+
+
+# Quem trabalha na recepção (quem pode entrar no sistema)
+# UserMixin dá ao modelo o que o Flask-Login espera de um usuário
+# (is_authenticated, get_id()...), sem precisarmos escrever.
+class Usuario(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(100), nullable=False)
+    login = db.Column(db.String(50), nullable=False, unique=True)
+
+    # NUNCA guardamos a senha em si, só um "hash": uma impressão
+    # digital dela que não dá para desfazer. Para conferir, calculamos
+    # o hash do que foi digitado e comparamos.
+    senha_hash = db.Column(db.String(255), nullable=False)
+
+    def definir_senha(self, senha):
+        self.senha_hash = generate_password_hash(senha)
+
+    def confere_senha(self, senha):
+        return check_password_hash(self.senha_hash, senha)
 
 
 PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
@@ -206,6 +231,118 @@ def ler_formulario(paciente_id=None):
 def mostrar_erros(erros):
     for erro in erros:
         flash(erro, "erro")
+
+
+# ---------- Login ----------
+
+login_manager = LoginManager(app)
+
+
+@login_manager.user_loader
+def carregar_usuario(usuario_id):
+    """A sessão (o cookie) guarda só o id do usuário. A cada página,
+    o Flask-Login chama esta função para buscar o usuário completo."""
+    return db.session.get(Usuario, int(usuario_id))
+
+
+# Páginas que qualquer um pode ver, sem login.
+# O painel fica na TV da recepção, então não pode pedir senha.
+PAGINAS_PUBLICAS = {"login", "static", "painel", "painel_dados"}
+
+
+@app.before_request
+def exigir_login():
+    """Roda ANTES de toda rota. Quem não entrou vai para o login.
+
+    Proteger tudo por padrão é mais seguro do que marcar rota por rota:
+    uma rota nova já nasce protegida, mesmo que alguém esqueça.
+    """
+    if request.endpoint in PAGINAS_PUBLICAS or current_user.is_authenticated:
+        return None  # pode seguir para a rota
+
+    # Guarda para onde a pessoa queria ir, para mandá-la de volta depois.
+    # (full_path inclui o ?q=..., mas deixa um "?" sobrando quando não há)
+    proxima = request.full_path if request.query_string else request.path
+    return redirect(url_for("login", proxima=proxima))
+
+
+def endereco_seguro(endereco):
+    """Só aceita endereços DESTE site ('/pacientes'), nunca de outro.
+
+    Sem isso, alguém poderia mandar um link como
+    /login?proxima=https://site-falso.com, e depois de digitar a senha
+    a pessoa cairia num site falso achando que ainda está no Atrial.
+    """
+    return (
+        bool(endereco)
+        and endereco.startswith("/")
+        and not endereco.startswith("//")   # //site.com também é outro site
+        and "\\" not in endereco             # alguns navegadores leem \ como /
+    )
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+
+    if current_user.is_authenticated:
+        return redirect(url_for("pacientes"))
+
+    proxima = request.args.get("proxima", "")
+
+    if request.method == "POST":
+        login_digitado = request.form.get("login", "").strip().lower()
+        senha = request.form.get("senha", "")
+
+        usuario = Usuario.query.filter_by(login=login_digitado).first()
+
+        if usuario and usuario.confere_senha(senha):
+            login_user(usuario)
+            flash(f"Olá, {usuario.nome}!", "sucesso")
+            return redirect(proxima if endereco_seguro(proxima) else url_for("pacientes"))
+
+        # Mesma mensagem para usuário inexistente e senha errada:
+        # assim ninguém descobre quais logins existem testando.
+        flash("Usuário ou senha incorretos.", "erro")
+        return render_template("login.html", login=login_digitado, proxima=proxima)
+
+    return render_template("login.html", login="", proxima=proxima)
+
+
+# POST (e não um link comum) para que outro site não consiga
+# deslogar alguém só colocando uma imagem apontando para /logout
+@app.route("/logout", methods=["POST"])
+def logout():
+    logout_user()
+    flash("Você saiu do sistema.", "sucesso")
+    return redirect(url_for("login"))
+
+
+@app.cli.command("criar-usuario")
+@click.argument("login")
+@click.option("--nome", prompt="Nome de quem vai usar")
+@click.password_option("--senha", prompt="Senha")
+def criar_usuario(login, nome, senha):
+    """Cria um usuário da recepção. Uso:
+
+        flask --app app criar-usuario maria
+
+    (Não existe página de "criar conta": só quem tem acesso
+    ao servidor pode cadastrar quem entra no sistema.)
+    """
+    login = login.strip().lower()
+
+    if Usuario.query.filter_by(login=login).first():
+        raise click.ClickException(f"Já existe o usuário '{login}'.")
+
+    if len(senha) < 8:
+        raise click.ClickException("A senha precisa ter pelo menos 8 caracteres.")
+
+    usuario = Usuario(nome=nome.strip(), login=login)
+    usuario.definir_senha(senha)
+    db.session.add(usuario)
+    db.session.commit()
+
+    click.echo(f"Usuário '{login}' criado.")
 
 
 # ---------- Rotas ----------

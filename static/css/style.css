@@ -302,3 +302,24 @@ body.painel {
 .painel-som:hover {
     background-color: #3d5d7a;
 }
+
+/* ===== Login ===== */
+
+.login {
+    max-width: 360px;
+    margin: 0 auto;
+}
+
+/* "Fulana  [Sair]" no fim do menu */
+nav .sair {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    color: #555;
+}
+
+nav .sair button {
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 14px;
+}

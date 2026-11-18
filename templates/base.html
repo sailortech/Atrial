@@ -13,6 +13,9 @@
     <header>
         <h1>Atrial</h1>
 
+        {# current_user vem do Flask-Login e está em todo template.
+           Na tela de login não há menu: as páginas pediriam senha. #}
+        {% if current_user.is_authenticated %}
         <nav>
             <a href="{{ url_for('home') }}"
                class="{% if request.endpoint == 'home' %}ativo{% endif %}">
@@ -30,7 +33,13 @@
             <a href="{{ url_for('painel') }}" target="_blank">
                 Painel da TV
             </a>
+
+            <form method="POST" action="{{ url_for('logout') }}" class="sair">
+                <span>{{ current_user.nome }}</span>
+                <button type="submit">Sair</button>
+            </form>
         </nav>
+        {% endif %}
     </header>
 
     <main>
