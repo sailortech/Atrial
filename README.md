@@ -9,7 +9,7 @@ O projeto tem duas partes:
 | Pasta | O que é |
 |---|---|
 | [`backend/`](backend/) | O sistema completo em **Flask**: banco de dados, regras, login e as páginas da recepção (HTML montado no servidor) |
-| [`frontend/`](frontend/) | Telas em **React**, que conversam com o Flask por JSON. Por enquanto, só o painel da TV (veja [Frontend em React](#frontend-em-react)) |
+| [`frontend/`](frontend/) | Telas em **React**, que conversam com o Flask por uma API JSON. Já tem login, lista de pacientes e painel da TV (veja [Frontend em React](#frontend-em-react)) |
 
 ## O que ele faz
 
@@ -146,10 +146,14 @@ frontend/
   package.json            dependências do JavaScript e comandos (npm run ...)
   src/
     main.jsx              ponto de partida do React
-    App.jsx               componente raiz
-    componentes/          pedaços da tela (Painel, ChamadaAtual, ...)
-    hooks/                lógica reaproveitável (usePainel, useSom)
-    painel.css            visual do painel
+    App.jsx               rotas (qual tela aparece em cada endereço)
+    api.js                conversa com a API do Flask (CSRF, erros)
+    sessao.jsx            quem está logado (Context), para qualquer componente
+    paginas/              telas inteiras (Pacientes)
+    componentes/          pedaços da tela (Login, Cabecalho, Painel, tabelas...)
+    hooks/                lógica reaproveitável (usePacientes, usePainel, useSom)
+    app.css               visual das telas da recepção
+    painel.css            visual do painel da TV
 ```
 
 Templates que começam com `_` são **pedaços** incluídos em outras páginas, e não páginas inteiras.
@@ -166,7 +170,14 @@ Dentro do `app.py`, as partes estão separadas por comentários (`# ---------- L
 
 ## Frontend em React
 
-A pasta `frontend/` tem a versão em **React** do painel da TV. Ela é o começo da migração das telas para React, e funciona ao lado do painel antigo, que continua em `/painel` no Flask.
+A pasta `frontend/` tem a versão em **React** de parte do sistema. As telas vão sendo levadas aos poucos para o React, e enquanto isso as páginas do Flask continuam funcionando normalmente.
+
+| Endereço (no React) | Tela |
+|---|---|
+| `/pacientes` | Login + lista de pacientes: chamar, concluir, chamar de novo, não compareceu, busca |
+| `/painel` | Painel da TV (sem login) |
+
+Ainda só no Flask: cadastro e edição de pacientes, relatório, locais, usuários e senhas.
 
 Requisito: **Node.js** (testado com o 24), que já traz o `npm`.
 
@@ -181,7 +192,13 @@ npm run dev
 
 Abra **http://localhost:5173**. O código fica em `frontend/src/`, e o navegador se atualiza sozinho a cada arquivo salvo.
 
-**Como o React fala com o Flask:** o React roda no Vite, na porta 5173, e o Flask roda na 5000. Quando o React pede `/painel/dados`, o Vite repassa o pedido para o Flask (o *proxy*, configurado em `vite.config.js`). Para o navegador, tudo parece um site só. Se o Flask estiver em outro endereço, defina `ATRIAL_BACKEND` antes do `npm run dev`, por exemplo `$env:ATRIAL_BACKEND="http://127.0.0.1:5051"`.
+**Como o React fala com o Flask:** o React roda no Vite, na porta 5173, e o Flask roda na 5000. Quando o React pede `/api/...` ou `/painel/dados`, o Vite repassa o pedido para o Flask (o *proxy*, configurado em `vite.config.js`). Para o navegador, tudo parece um site só, e por isso o **cookie de login do Flask** funciona no React também.
+
+A API fica no fim do `backend/app.py` (seção "API JSON"), e as rotas dela usam **as mesmas funções** das páginas HTML (`autenticar`, `acao_chamar_proximo`, ...): as regras ficam num lugar só. Ela segue estas convenções:
+
+- **Login:** `GET /api/sessao` diz quem está logado e entrega o código CSRF; `POST /api/login` e `POST /api/logout` entram e saem.
+- **CSRF:** todo `POST` manda o código no cabeçalho `X-CSRFToken`. O [`src/api.js`](frontend/src/api.js) faz isso sozinho.
+- **Erros:** um código HTTP e `{"erro": "mensagem"}`. `401` = não está logado, `403` = sem permissão (ou senha provisória), `409` = não deu por causa da situação atual (fila vazia, paciente que já saiu do atendimento). Se o Flask estiver em outro endereço, defina `ATRIAL_BACKEND` antes do `npm run dev`, por exemplo `$env:ATRIAL_BACKEND="http://127.0.0.1:5051"`.
 
 Outros comandos, sempre rodados de dentro de `frontend/`:
 
