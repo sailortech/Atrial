@@ -342,3 +342,42 @@ def test_pagina_mostra_quando_foi_chamado_de_novo(cliente, criar_paciente):
     assert "Chamar de novo" in html
     assert "chamado de novo às" in html
     assert "Chamando novamente" in cliente.get("/painel").get_data(as_text=True)
+
+
+# ---------- Não compareceu ----------
+
+def test_nao_compareceu_encerra_e_vai_para_o_historico(cliente, criar_paciente):
+    paciente = em_atendimento(criar_paciente, "Ana", "Triagem", chamado_ha_min=5)
+
+    cliente.post(f"/pacientes/nao-compareceu/{paciente.id}")
+
+    db.session.refresh(paciente)
+    assert paciente.status == "Não compareceu"
+    assert paciente.concluido_em is not None
+
+    html = cliente.get("/pacientes").get_data(as_text=True)
+    historico = html.split("Histórico de atendimentos")[1]
+    assert "Ana" in historico
+    assert 'class="ausente"' in historico
+    assert "Ninguém sendo atendido" in html  # saiu de "Em atendimento"
+
+
+def test_nao_compareceu_so_vale_para_quem_esta_em_atendimento(cliente, criar_paciente):
+    paciente = criar_paciente("Ana")  # ainda na fila
+
+    cliente.post(f"/pacientes/nao-compareceu/{paciente.id}")
+
+    db.session.refresh(paciente)
+    assert paciente.status == "Aguardando"
+
+
+def test_nome_com_apostrofo_nao_quebra_o_confirm(cliente, criar_paciente):
+    """O nome do paciente NÃO pode ir para dentro do confirm('...'):
+    um apóstrofo fecharia a string do JavaScript."""
+    em_atendimento(criar_paciente, "Joana D'Arc", "Triagem", chamado_ha_min=5)
+
+    html = cliente.get("/pacientes").get_data(as_text=True)
+
+    for linha in html.splitlines():
+        if "confirm(" in linha:
+            assert "Arc" not in linha

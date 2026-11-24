@@ -117,7 +117,8 @@ class Paciente(db.Model):
     # Horários do atendimento (vazios em pacientes antigos)
     chegada = db.Column(db.DateTime)       # entrou na fila
     chamado_em = db.Column(db.DateTime)    # foi chamado para atendimento
-    concluido_em = db.Column(db.DateTime)  # atendimento terminou
+    # Atendimento encerrado: concluído OU "não compareceu" (ver status)
+    concluido_em = db.Column(db.DateTime)
 
     # Para onde o paciente foi chamado (um dos LOCAIS).
     # Vazio em quem foi chamado antes de existir esta coluna.
@@ -171,6 +172,9 @@ class Usuario(UserMixin, db.Model):
 
 
 PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
+
+# Status de quem já saiu da fila e do atendimento (vão para o histórico)
+STATUS_ENCERRADOS = ["Concluído", "Não compareceu"]
 
 # Para onde os pacientes podem ser chamados. Para mudar os locais
 # da clínica, basta editar esta lista (e reiniciar o servidor).
@@ -526,9 +530,9 @@ def pacientes():
 
     fila = filtrar_busca(buscar_por_status("Aguardando"), termo).all()
 
-    # Histórico: os concluídos mais recentes primeiro
+    # Histórico: os encerrados (atendidos ou ausentes), mais recentes primeiro
     concluidos = filtrar_busca(
-        Paciente.query.filter_by(status="Concluído"), termo
+        Paciente.query.filter(Paciente.status.in_(STATUS_ENCERRADOS)), termo
     ).order_by(
         Paciente.id.desc()
     ).all()
@@ -593,7 +597,10 @@ def relatorio_do_dia(dia):
 
     chegaram = [p for p in pacientes if no_dia(p.chegada, dia)]
     chamados = [p for p in pacientes if no_dia(p.chamado_em, dia)]
-    concluidos = [p for p in pacientes if no_dia(p.concluido_em, dia)]
+    encerrados = [p for p in pacientes if no_dia(p.concluido_em, dia)]
+    # Só quem foi atendido de verdade entra em "atendidos" e na duração
+    concluidos = [p for p in encerrados if p.status == "Concluído"]
+    ausentes = [p for p in encerrados if p.status == "Não compareceu"]
 
     esperas = [minutos_entre(p.chegada, p.chamado_em) for p in chamados]
     esperas = [e for e in esperas if e is not None]
@@ -619,6 +626,7 @@ def relatorio_do_dia(dia):
         "dia": dia,
         "chegaram": len(chegaram),
         "atendidos": len(concluidos),
+        "nao_compareceram": len(ausentes),
         "espera_media": media(esperas),
         "maior_espera": max(esperas) if esperas else None,
         "duracao_media": media(
@@ -881,6 +889,24 @@ def finalizar_atendimento(id):
         paciente.concluido_em = datetime.now()
         db.session.commit()
         flash(f"Atendimento de {paciente.nome} concluído.", "sucesso")
+
+    return redirect(url_for("pacientes"))
+
+
+@app.route("/pacientes/nao-compareceu/<int:id>", methods=["POST"])
+def nao_compareceu(id):
+    """Foi chamado (talvez mais de uma vez) e não apareceu.
+
+    Encerra como "Não compareceu": sai de "Em atendimento", vai para o
+    histórico, mas NÃO conta como atendido nem entra na duração média.
+    """
+    paciente = db.get_or_404(Paciente, id)
+
+    if paciente.status == "Em atendimento":
+        paciente.status = "Não compareceu"
+        paciente.concluido_em = datetime.now()
+        db.session.commit()
+        flash(f"{paciente.nome} marcado como não compareceu.", "sucesso")
 
     return redirect(url_for("pacientes"))
 

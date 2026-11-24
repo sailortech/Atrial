@@ -489,3 +489,24 @@ button.secundario {
     color: #555;
     font-weight: normal;
 }
+
+/* ===== Não compareceu ===== */
+
+/* Botão com cara de link: ação rara, não deve competir com "Concluir" */
+.nao-compareceu {
+    display: block;
+}
+
+button.link {
+    margin: 4px 0 0;
+    padding: 0;
+    background: none;
+    color: #842029;
+    font-size: 14px;
+    text-decoration: underline;
+}
+
+/* No histórico: linha de quem não veio fica em tom de alerta */
+tr.ausente td {
+    color: #842029;
+}

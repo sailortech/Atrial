@@ -58,6 +58,15 @@
                     {% if paciente.foi_rechamado %}
                     <small class="rechamado">chamado de novo às {{ paciente.ultima_chamada|hora }}</small>
                     {% endif %}
+                    {# Encerra sem atendimento: discreto e com confirmação,
+                       para não ser clicado sem querer no lugar de "Concluir" #}
+                    <form method="POST"
+                          action="{{ url_for('nao_compareceu', id=paciente.id) }}"
+                          class="nao-compareceu"
+                          onsubmit="return confirm('Marcar este paciente como não compareceu?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="link">Não compareceu</button>
+                    </form>
                 </td>
             </tr>
             {% endfor %}
@@ -140,7 +149,8 @@
         </thead>
         <tbody>
             {% for paciente in concluidos %}
-            <tr>
+            {% set ausente = paciente.status == "Não compareceu" %}
+            <tr {% if ausente %}class="ausente"{% endif %}>
                 <td>{{ paciente.nome }}</td>
                 <td>{{ paciente.local or "-" }}</td>
                 <td>{{ paciente.prioridade }}</td>
@@ -150,7 +160,11 @@
                     {% else %}-{% endif %}
                 </td>
                 <td>{{ paciente.chegada|duracao(paciente.chamado_em) }}</td>
-                <td>{{ paciente.chamado_em|duracao(paciente.concluido_em) }}</td>
+                <td>
+                    {# Quem não veio não teve atendimento: não há duração #}
+                    {% if ausente %}<strong>Não compareceu</strong>
+                    {% else %}{{ paciente.chamado_em|duracao(paciente.concluido_em) }}{% endif %}
+                </td>
                 <td>{{ paciente.cpf|cpf }}</td>
                 <td>
                     <a href="{{ url_for('editar_paciente', id=paciente.id) }}">
