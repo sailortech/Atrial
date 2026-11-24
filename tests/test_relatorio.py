@@ -181,6 +181,7 @@ def test_quem_nao_compareceu_nao_conta_como_atendido(criar_paciente):
     assert dados["atendidos"] == 1
     assert dados["nao_compareceram"] == 1
     assert dados["duracao_media"] == 20          # a hora do Bruno não entra
-    assert dados["por_local"][0]["atendidos"] == 1
+    triagem = next(l for l in dados["por_local"] if l["local"] == "Triagem")
+    assert triagem["atendidos"] == 1
     # Mas a espera do Bruno (até ser chamado) conta: a clínica o fez esperar
     assert dados["espera_media"] == pytest.approx((10 + 40) / 2)

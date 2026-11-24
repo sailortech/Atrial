@@ -24,7 +24,7 @@
         {% if not session.ultimo_local %}
         <option value="" selected disabled>Chamar para...</option>
         {% endif %}
-        {% for local in LOCAIS %}
+        {% for local in locais_ativos() %}
         <option value="{{ local }}" {% if local == session.ultimo_local %}selected{% endif %}>
             {{ local }}
         </option>

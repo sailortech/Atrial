@@ -33,6 +33,10 @@
                class="{% if request.endpoint == 'relatorio' %}ativo{% endif %}">
                 Relatório
             </a>
+            <a href="{{ url_for('locais') }}"
+               class="{% if request.endpoint == 'locais' %}ativo{% endif %}">
+                Locais
+            </a>
             {# target="_blank": abre em outra aba, para colocar na TV #}
             <a href="{{ url_for('painel') }}" target="_blank">
                 Painel da TV

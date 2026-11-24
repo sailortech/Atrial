@@ -120,7 +120,9 @@ class Paciente(db.Model):
     # Atendimento encerrado: concluído OU "não compareceu" (ver status)
     concluido_em = db.Column(db.DateTime)
 
-    # Para onde o paciente foi chamado (um dos LOCAIS).
+    # Para onde o paciente foi chamado (o NOME de um Local). Guardamos o
+    # nome, e não o id, de propósito: é o registro do que aconteceu.
+    # Se o local for desativado depois, o histórico continua igual.
     # Vazio em quem foi chamado antes de existir esta coluna.
     local = db.Column(db.String(50))
 
@@ -176,10 +178,36 @@ PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
 # Status de quem já saiu da fila e do atendimento (vão para o histórico)
 STATUS_ENCERRADOS = ["Concluído", "Não compareceu"]
 
-# Para onde os pacientes podem ser chamados. Para mudar os locais
-# da clínica, basta editar esta lista (e reiniciar o servidor).
-LOCAIS = ["Triagem", "Consultório 1", "Consultório 2", "Consultório 3"]
-app.jinja_env.globals["LOCAIS"] = LOCAIS
+# Para onde os pacientes podem ser chamados (triagem, consultórios...).
+# Cadastrados pela página /locais.
+class Local(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    nome = db.Column(db.String(50), nullable=False, unique=True)
+
+    # Local desativado some do "Chamar para...", mas NÃO é apagado:
+    # o histórico dos pacientes continua mostrando o nome dele.
+    ativo = db.Column(db.Boolean, nullable=False, default=True)
+
+
+def nomes_dos_locais_ativos():
+    """['Consultório 1', 'Triagem', ...] em ordem alfabética."""
+    return [
+        local.nome
+        for local in Local.query.filter_by(ativo=True).order_by(Local.nome)
+    ]
+
+
+@app.context_processor
+def locais_nos_templates():
+    """Tudo que esta função devolve fica disponível em TODOS os templates.
+
+    Antes, LOCAIS era uma lista fixa no código (jinja_env.globals).
+    Agora vem do banco e pode mudar a qualquer momento, então precisa
+    ser lido de novo a cada página. O context_processor faz isso.
+    (Passamos a FUNÇÃO, sem os parênteses: o banco só é consultado
+    se o template chamar locais_ativos().)
+    """
+    return {"locais_ativos": nomes_dos_locais_ativos}
 
 # Deixa a lista disponível em todos os templates
 app.jinja_env.globals["PRIORIDADES"] = PRIORIDADES
@@ -644,9 +672,20 @@ def relatorio_do_dia(dia):
                     for p in concluidos if p.local == local
                 ),
             }
-            for local in LOCAIS
+            for local in locais_do_relatorio(concluidos)
         ],
     }
+
+
+def locais_do_relatorio(concluidos):
+    """Os locais ativos hoje + qualquer outro que tenha atendido no dia.
+
+    Assim, um consultório desativado ontem ainda aparece no relatório
+    dos dias em que funcionou.
+    """
+    nomes = set(nomes_dos_locais_ativos())
+    nomes.update(p.local for p in concluidos if p.local)
+    return sorted(nomes)
 
 
 def grafico_por_hora(por_hora):
@@ -836,7 +875,7 @@ def chamar_proximo():
 
     local = request.form.get("local", "")
 
-    if local not in LOCAIS:
+    if local not in nomes_dos_locais_ativos():
         flash("Escolha para qual local o paciente será chamado.", "erro")
         return redirect(url_for("pacientes"))
 
@@ -924,6 +963,61 @@ def excluir_paciente(id):
     flash(f"Paciente {nome} excluído.", "sucesso")
 
     return redirect(url_for("pacientes"))
+
+
+# ---------- Locais (cadastro) ----------
+
+@app.route("/locais", methods=["GET", "POST"])
+def locais():
+
+    if request.method == "POST":
+        # " consultório  4 " -> "consultório 4" (tira espaços sobrando)
+        nome = " ".join(request.form.get("nome", "").split())
+
+        # Compara sem acentos/maiúsculas: "consultorio 1" e "Consultório 1"
+        # seriam o mesmo local, só digitado diferente.
+        repetido = any(
+            normalizar(local.nome) == normalizar(nome)
+            for local in Local.query.all()
+        )
+
+        if not nome:
+            flash("Informe o nome do local.", "erro")
+        elif len(nome) > 50:
+            flash("O nome pode ter no máximo 50 caracteres.", "erro")
+        elif repetido:
+            flash(f"Já existe um local chamado \"{nome}\" (veja a lista abaixo).", "erro")
+        else:
+            db.session.add(Local(nome=nome))
+            db.session.commit()
+            flash(f"Local \"{nome}\" adicionado.", "sucesso")
+
+        return redirect(url_for("locais"))
+
+    return render_template(
+        "locais.html",
+        # Ativos primeiro; dentro de cada grupo, em ordem alfabética
+        locais=Local.query.order_by(Local.ativo.desc(), Local.nome).all(),
+    )
+
+
+@app.route("/locais/<int:id>/alternar", methods=["POST"])
+def alternar_local(id):
+    """Desativa um local ativo, ou reativa um desativado."""
+    local = db.get_or_404(Local, id)
+
+    if local.ativo and len(nomes_dos_locais_ativos()) == 1:
+        # Sem nenhum local ativo, ninguém conseguiria chamar pacientes
+        flash("É preciso ter pelo menos um local ativo.", "erro")
+        return redirect(url_for("locais"))
+
+    local.ativo = not local.ativo
+    db.session.commit()
+
+    situacao = "reativado" if local.ativo else "desativado"
+    flash(f"Local \"{local.nome}\" {situacao}.", "sucesso")
+
+    return redirect(url_for("locais"))
 
 
 if __name__ == "__main__":

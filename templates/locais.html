@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block titulo %}Locais{% endblock %}
+
+{% block conteudo %}
+
+<h2>Locais de atendimento</h2>
+
+<p class="ajuda">
+    Para onde os pacientes podem ser chamados (aparecem em "Chamar para..." e no painel da TV).
+    Um local desativado sai da lista de chamada, mas continua no histórico e nos relatórios.
+</p>
+
+<form method="POST" action="{{ url_for('locais') }}" class="novo-local">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="text" name="nome" maxlength="50" required
+           placeholder="Nome do novo local (ex.: Consultório 4)" aria-label="Nome do novo local">
+    <button type="submit">Adicionar</button>
+</form>
+
+<table>
+    <thead>
+        <tr>
+            <th>Local</th>
+            <th>Situação</th>
+            <th>Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for local in locais %}
+        <tr {% if not local.ativo %}class="inativo"{% endif %}>
+            <td>{{ local.nome }}</td>
+            <td>{{ "Ativo" if local.ativo else "Desativado" }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('alternar_local', id=local.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="secundario">
+                        {{ "Desativar" if local.ativo else "Reativar" }}
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="vazio">Nenhum local cadastrado.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% endblock %}

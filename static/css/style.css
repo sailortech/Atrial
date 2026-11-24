@@ -510,3 +510,27 @@ button.link {
 tr.ausente td {
     color: #842029;
 }
+
+/* ===== Cadastro de locais ===== */
+
+.ajuda {
+    color: #555;
+}
+
+.novo-local {
+    flex-direction: row;
+    align-items: center;
+}
+
+.novo-local input {
+    flex: 1;
+    max-width: 400px;
+}
+
+.novo-local button {
+    margin-top: 0;
+}
+
+tr.inativo td {
+    color: #888;
+}

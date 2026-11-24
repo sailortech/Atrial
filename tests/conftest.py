@@ -23,7 +23,9 @@ os.environ["SECRET_KEY"] = "chave-so-para-testes"
 # Deixa o "import app" funcionar a partir da pasta tests/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import app as flask_app, db, Paciente, Usuario  # noqa: E402
+from app import app as flask_app, db, Local, Paciente, Usuario  # noqa: E402
+
+LOCAIS_INICIAIS = ["Triagem", "Consultório 1", "Consultório 2", "Consultório 3"]
 
 
 @pytest.fixture
@@ -38,6 +40,11 @@ def app():
 
     with flask_app.app_context():
         db.create_all()
+
+        # Os mesmos locais que a migration cria no banco de verdade
+        db.session.add_all(Local(nome=nome) for nome in LOCAIS_INICIAIS)
+        db.session.commit()
+
         yield flask_app      # aqui o teste roda
         db.session.remove()  # e depois limpamos tudo
         db.drop_all()
