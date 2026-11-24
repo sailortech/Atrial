@@ -1,7 +1,10 @@
 /* Visual do painel da TV: tudo grande e com contraste alto,
    porque é lido de longe. (Mesmo visual do painel antigo do Flask.) */
 
-:root {
+/* Tudo fica dentro de .painel: o visual escuro da TV não "vaza"
+   para as outras telas do app (que usam app.css). */
+
+.painel {
   --fundo: #12263a;
   --linha: #2f4a63;
   --texto: #ffffff;
@@ -9,28 +12,17 @@
   --texto-detalhe: #cfdbe6;
   --destino: #7fd1ae;
   --destaque: #1f6f50;
-}
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   background-color: var(--fundo);
   color: var(--texto);
 }
 
-.painel {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
 /* ----- Topo ----- */
 
-.topo {
+.painel .topo {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -41,7 +33,7 @@ body {
   border-bottom: 1px solid var(--linha);
 }
 
-.botao-som {
+.painel .botao-som {
   padding: 8px 16px;
   font-size: 1rem;
   border: none;
@@ -51,18 +43,18 @@ body {
   color: var(--texto);
 }
 
-.botao-som:hover {
+.painel .botao-som:hover {
   background-color: #3d5d7a;
 }
 
-.sem-conexao {
+.painel .sem-conexao {
   font-size: 1rem;
   color: #f8d7a0;
 }
 
 /* ----- Chamada atual (centro) ----- */
 
-.atual {
+.painel .atual {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -72,7 +64,7 @@ body {
   padding: 20px;
 }
 
-.rotulo {
+.painel .rotulo {
   margin: 0;
   font-size: 1.5rem;
   text-transform: uppercase;
@@ -80,20 +72,20 @@ body {
   color: var(--texto-suave);
 }
 
-.nome {
+.painel .nome {
   margin: 10px 0;
   font-size: clamp(3rem, 10vw, 8rem);
   font-weight: bold;
 }
 
-.local {
+.painel .local {
   margin: 0 0 16px;
   font-size: clamp(2rem, 6vw, 4.5rem);
   font-weight: bold;
   color: var(--destino);
 }
 
-.detalhe {
+.painel .detalhe {
   margin: 0;
   font-size: 2rem;
   color: var(--texto-detalhe);
@@ -104,13 +96,13 @@ body {
   25%, 75% { background-color: var(--destaque); }
 }
 
-.piscando {
+.painel .piscando {
   animation: destaque 2s ease-in-out;
 }
 
 /* ----- Rodapé ----- */
 
-.rodape {
+.painel .rodape {
   display: flex;
   justify-content: space-between;
   gap: 40px;
@@ -118,23 +110,23 @@ body {
   border-top: 1px solid var(--linha);
 }
 
-.anteriores {
+.painel .anteriores {
   list-style: none;
   padding: 0;
   margin: 10px 0 0;
   font-size: 1.6rem;
 }
 
-.anteriores .hora {
+.painel .anteriores .hora {
   color: var(--texto-suave);
   margin-left: 10px;
 }
 
-.contador {
+.painel .contador {
   text-align: right;
 }
 
-.numero {
+.painel .numero {
   margin: 10px 0 0;
   font-size: 4rem;
   font-weight: bold;

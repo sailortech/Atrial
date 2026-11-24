@@ -8,7 +8,8 @@ from pathlib import Path
 
 import click
 from flask import (
-    Flask, abort, flash, redirect, render_template, request, session, url_for
+    Flask, abort, flash, jsonify, redirect, render_template, request,
+    session, url_for,
 )
 
 from flask_login import (
@@ -17,7 +18,7 @@ from flask_login import (
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 from flask_migrate import Migrate
-from flask_wtf.csrf import CSRFError, CSRFProtect
+from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -521,7 +522,18 @@ def validar_senha(senha, confirmacao=None):
 
 # Páginas que qualquer um pode ver, sem login.
 # O painel fica na TV da recepção, então não pode pedir senha.
-PAGINAS_PUBLICAS = {"login", "static", "painel", "painel_dados"}
+PAGINAS_PUBLICAS = {
+    "login", "static", "painel", "painel_dados",
+    # API do React: ver se está logado e fazer o login
+    "api_sessao", "api_login",
+}
+
+# O que quem está com senha provisória ainda pode usar
+LIBERADAS_COM_SENHA_PROVISORIA = {"minha_senha", "logout", "api_sessao", "api_logout"}
+
+
+def e_pedido_da_api():
+    return request.path.startswith("/api/")
 
 
 @app.before_request
@@ -530,6 +542,9 @@ def exigir_login():
 
     Proteger tudo por padrão é mais seguro do que marcar rota por rota:
     uma rota nova já nasce protegida, mesmo que alguém esqueça.
+
+    Para a API (React) a resposta é JSON com o código HTTP certo, em
+    vez de redirecionar para uma página HTML que o React não usaria.
     """
     if request.endpoint in PAGINAS_PUBLICAS:
         return None  # pode seguir para a rota
@@ -537,10 +552,16 @@ def exigir_login():
     if current_user.is_authenticated:
         # Senha provisória (dada pela administração)? Até criar a própria,
         # a pessoa só consegue trocar a senha ou sair.
-        if current_user.trocar_senha and request.endpoint not in {"minha_senha", "logout"}:
+        if current_user.trocar_senha and request.endpoint not in LIBERADAS_COM_SENHA_PROVISORIA:
+            if e_pedido_da_api():
+                return jsonify(erro="Crie uma senha sua para continuar.", trocar_senha=True), 403
             flash("Crie uma senha sua para continuar.", "erro")
             return redirect(url_for("minha_senha"))
         return None
+
+    if e_pedido_da_api():
+        # 401 = "não autenticado": o React mostra a tela de login
+        return jsonify(erro="Faça login para continuar."), 401
 
     # Guarda para onde a pessoa queria ir, para mandá-la de volta depois.
     # (full_path inclui o ?q=..., mas deixa um "?" sobrando quando não há)
@@ -563,6 +584,64 @@ def endereco_seguro(endereco):
     )
 
 
+def autenticar(login_digitado, senha):
+    """Confere login e senha, com todas as proteções. Devolve
+    (usuario, None) se deu certo ou (None, mensagem_de_erro).
+
+    Usada pela página de login (HTML) E pela API do React: as duas
+    portas de entrada passam pelas mesmas regras.
+    """
+    tentativa = db.session.get(TentativaLogin, login_digitado)
+
+    # Bloqueado? Nem confere a senha: senão daria para continuar
+    # "chutando" e só descobrir qual acertou depois do bloqueio.
+    if tentativa and tentativa.bloqueado():
+        return None, (
+            "Muitas tentativas com senha errada. Tente de novo em "
+            f"{tentativa.minutos_restantes()} min."
+        )
+
+    usuario = Usuario.query.filter_by(login=login_digitado).first()
+
+    if usuario:
+        senha_certa = usuario.confere_senha(senha)
+    else:
+        # Login inexistente: confere contra um hash qualquer só para
+        # DEMORAR o mesmo tanto. Sem isso, a resposta rápida entregaria
+        # que o login não existe (quem mede o tempo descobriria).
+        check_password_hash(HASH_PARA_IGUALAR_TEMPO, senha)
+        senha_certa = False
+
+    if not senha_certa:
+        if login_digitado:
+            tentativa = tentativa or TentativaLogin(login=login_digitado, erros=0)
+            tentativa.registrar_erro()
+            db.session.add(tentativa)
+            db.session.commit()
+
+        # Mesma mensagem para usuário inexistente e senha errada:
+        # assim ninguém descobre quais logins existem testando.
+        return None, "Usuário ou senha incorretos."
+
+    # Acertou: zera os erros deste login
+    if tentativa:
+        db.session.delete(tentativa)
+        db.session.commit()
+
+    # Só contamos que o usuário está desativado para quem acertou
+    # a senha: assim isso não vira um jeito de descobrir logins.
+    if not usuario.ativo:
+        return None, "Este usuário foi desativado. Fale com a administração."
+
+    return usuario, None
+
+
+def login_digitado_do(texto):
+    # [:50]: o login vira chave na tabela de tentativas; não deixamos
+    # alguém mandar um texto enorme para encher o banco
+    return (texto or "").strip().lower()[:50]
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
 
@@ -572,55 +651,11 @@ def login():
     proxima = request.args.get("proxima", "")
 
     if request.method == "POST":
-        # [:50]: o login vira chave na tabela de tentativas; não deixamos
-        # alguém mandar um texto enorme para encher o banco
-        login_digitado = request.form.get("login", "").strip().lower()[:50]
-        senha = request.form.get("senha", "")
+        login_digitado = login_digitado_do(request.form.get("login"))
+        usuario, erro = autenticar(login_digitado, request.form.get("senha", ""))
 
-        tentativa = db.session.get(TentativaLogin, login_digitado)
-
-        # Bloqueado? Nem confere a senha: senão daria para continuar
-        # "chutando" e só descobrir qual acertou depois do bloqueio.
-        if tentativa and tentativa.bloqueado():
-            flash(
-                "Muitas tentativas com senha errada. Tente de novo em "
-                f"{tentativa.minutos_restantes()} min.",
-                "erro"
-            )
-            return render_template("login.html", login=login_digitado, proxima=proxima)
-
-        usuario = Usuario.query.filter_by(login=login_digitado).first()
-
-        if usuario:
-            senha_certa = usuario.confere_senha(senha)
-        else:
-            # Login inexistente: confere contra um hash qualquer só para
-            # DEMORAR o mesmo tanto. Sem isso, a resposta rápida entregaria
-            # que o login não existe (quem mede o tempo descobriria).
-            check_password_hash(HASH_PARA_IGUALAR_TEMPO, senha)
-            senha_certa = False
-
-        if not senha_certa:
-            if login_digitado:
-                tentativa = tentativa or TentativaLogin(login=login_digitado, erros=0)
-                tentativa.registrar_erro()
-                db.session.add(tentativa)
-                db.session.commit()
-
-            # Mesma mensagem para usuário inexistente e senha errada:
-            # assim ninguém descobre quais logins existem testando.
-            flash("Usuário ou senha incorretos.", "erro")
-            return render_template("login.html", login=login_digitado, proxima=proxima)
-
-        # Acertou: zera os erros deste login
-        if tentativa:
-            db.session.delete(tentativa)
-            db.session.commit()
-
-        # Só contamos que o usuário está desativado para quem acertou
-        # a senha: assim isso não vira um jeito de descobrir logins.
-        if not usuario.ativo:
-            flash("Este usuário foi desativado. Fale com a administração.", "erro")
+        if erro:
+            flash(erro, "erro")
             return render_template("login.html", login=login_digitado, proxima=proxima)
 
         login_user(usuario)
@@ -677,6 +712,9 @@ def erro_csrf(erro):
     de novo em outra aba, e a página antiga ficou com o código velho).
     Em vez da página de erro 400 do Flask, explicamos e recomeçamos.
     """
+    if e_pedido_da_api():
+        return jsonify(erro="Sessão desatualizada. Recarregue a página."), 400
+
     flash("A página estava desatualizada. Confira e tente de novo.", "erro")
     return redirect(url_for("pacientes"))
 
@@ -761,26 +799,7 @@ def pacientes():
 
     # ?q=... na URL (vem do campo de busca)
     termo = request.args.get("q", "").strip()
-
-    em_atendimento = filtrar_busca(
-        buscar_por_status("Em atendimento"), termo
-    ).all()
-
-    # A posição na fila vem da fila COMPLETA: se a busca esconder
-    # alguém, quem sobrou não pode "subir" de posição.
-    posicoes = {
-        paciente.id: numero
-        for numero, paciente in enumerate(buscar_por_status("Aguardando"), start=1)
-    }
-
-    fila = filtrar_busca(buscar_por_status("Aguardando"), termo).all()
-
-    # Histórico: os encerrados (atendidos ou ausentes), mais recentes primeiro
-    concluidos = filtrar_busca(
-        Paciente.query.filter(Paciente.status.in_(STATUS_ENCERRADOS)), termo
-    ).order_by(
-        Paciente.id.desc()
-    ).all()
+    listas = listas_de_pacientes(termo)
 
     # ?parcial=1: o JavaScript da página só quer as listas atualizadas,
     # sem cabeçalho, menu etc. (veja _listas_pacientes.html)
@@ -789,14 +808,29 @@ def pacientes():
     else:
         template = "pacientes.html"
 
-    return render_template(
-        template,
-        termo=termo,
-        em_atendimento=em_atendimento,
-        fila=fila,
-        posicoes=posicoes,
-        concluidos=concluidos
-    )
+    return render_template(template, termo=termo, **listas)
+
+
+def listas_de_pacientes(termo):
+    """As três listas da tela de pacientes (usadas pelo HTML e pela API)."""
+    # A posição na fila vem da fila COMPLETA: se a busca esconder
+    # alguém, quem sobrou não pode "subir" de posição.
+    posicoes = {
+        paciente.id: numero
+        for numero, paciente in enumerate(buscar_por_status("Aguardando"), start=1)
+    }
+
+    return {
+        "em_atendimento": filtrar_busca(
+            buscar_por_status("Em atendimento"), termo
+        ).all(),
+        "fila": filtrar_busca(buscar_por_status("Aguardando"), termo).all(),
+        "posicoes": posicoes,
+        # Histórico: os encerrados (atendidos ou ausentes), mais recentes primeiro
+        "concluidos": filtrar_busca(
+            Paciente.query.filter(Paciente.status.in_(STATUS_ENCERRADOS)), termo
+        ).order_by(Paciente.id.desc()).all(),
+    }
 
 
 # ---------- Relatório do dia ----------
@@ -1087,84 +1121,96 @@ def editar_paciente(id):
     return render_template("editar_paciente.html", dados=paciente)
 
 
-@app.route("/pacientes/chamar-proximo", methods=["POST"])
-def chamar_proximo():
+# ---------- Ações de atendimento ----------
+# Cada ação é uma função que devolve (deu_certo, mensagem). Quem chama
+# decide o que fazer com isso: as rotas HTML viram flash + redirect;
+# a API (React) vira JSON. As REGRAS ficam num lugar só.
 
-    local = request.form.get("local", "")
-
+def acao_chamar_proximo(local):
     if local not in nomes_dos_locais_ativos():
-        flash("Escolha para qual local o paciente será chamado.", "erro")
-        return redirect(url_for("pacientes"))
+        return False, "Escolha para qual local o paciente será chamado."
 
     # Lembra o local escolhido (na sessão de quem está logado):
     # quem atende no Consultório 2 não precisa escolhê-lo toda vez.
     session["ultimo_local"] = local
 
     paciente = buscar_por_status("Aguardando").first()
+    if not paciente:
+        return False, "Não há pacientes aguardando na fila."
 
-    if paciente:
-        agora = datetime.now()
-        paciente.status = "Em atendimento"
-        paciente.chamado_em = agora
-        paciente.ultima_chamada = agora
-        paciente.local = local
-        db.session.commit()
-        flash(
-            f"Chamando {paciente.nome} ({paciente.prioridade}) para {local}.",
-            "sucesso"
-        )
-    else:
-        flash("Não há pacientes aguardando na fila.", "erro")
-
-    return redirect(url_for("pacientes"))
+    agora = datetime.now()
+    paciente.status = "Em atendimento"
+    paciente.chamado_em = agora
+    paciente.ultima_chamada = agora
+    paciente.local = local
+    db.session.commit()
+    return True, f"Chamando {paciente.nome} ({paciente.prioridade}) para {local}."
 
 
-@app.route("/pacientes/chamar-de-novo/<int:id>", methods=["POST"])
-def chamar_de_novo(id):
+def acao_chamar_de_novo(paciente):
     """O paciente foi chamado mas não apareceu: chama outra vez.
 
     Só muda ultima_chamada. Isso basta para o painel mostrar o nome
     de novo (e tocar o som), sem estragar o tempo de espera do relatório.
     """
-    paciente = db.get_or_404(Paciente, id)
+    if paciente.status != "Em atendimento":
+        return False, "Este paciente não está em atendimento."
 
-    if paciente.status == "Em atendimento":
-        paciente.ultima_chamada = datetime.now()
-        db.session.commit()
-        flash(f"Chamando {paciente.nome} novamente.", "sucesso")
-
-    return redirect(url_for("pacientes"))
+    paciente.ultima_chamada = datetime.now()
+    db.session.commit()
+    return True, f"Chamando {paciente.nome} novamente."
 
 
-@app.route("/pacientes/finalizar/<int:id>", methods=["POST"])
-def finalizar_atendimento(id):
-    paciente = db.get_or_404(Paciente, id)
+def acao_concluir(paciente):
+    if paciente.status != "Em atendimento":
+        return False, "Este paciente não está em atendimento."
 
-    if paciente.status == "Em atendimento":
-        paciente.status = "Concluído"
-        paciente.concluido_em = datetime.now()
-        db.session.commit()
-        flash(f"Atendimento de {paciente.nome} concluído.", "sucesso")
-
-    return redirect(url_for("pacientes"))
+    paciente.status = "Concluído"
+    paciente.concluido_em = datetime.now()
+    db.session.commit()
+    return True, f"Atendimento de {paciente.nome} concluído."
 
 
-@app.route("/pacientes/nao-compareceu/<int:id>", methods=["POST"])
-def nao_compareceu(id):
+def acao_nao_compareceu(paciente):
     """Foi chamado (talvez mais de uma vez) e não apareceu.
 
     Encerra como "Não compareceu": sai de "Em atendimento", vai para o
     histórico, mas NÃO conta como atendido nem entra na duração média.
     """
-    paciente = db.get_or_404(Paciente, id)
+    if paciente.status != "Em atendimento":
+        return False, "Este paciente não está em atendimento."
 
-    if paciente.status == "Em atendimento":
-        paciente.status = "Não compareceu"
-        paciente.concluido_em = datetime.now()
-        db.session.commit()
-        flash(f"{paciente.nome} marcado como não compareceu.", "sucesso")
+    paciente.status = "Não compareceu"
+    paciente.concluido_em = datetime.now()
+    db.session.commit()
+    return True, f"{paciente.nome} marcado como não compareceu."
 
+
+def responder_com_flash(resultado):
+    """Rotas HTML: mostra a mensagem e volta para a lista."""
+    deu_certo, mensagem = resultado
+    flash(mensagem, "sucesso" if deu_certo else "erro")
     return redirect(url_for("pacientes"))
+
+
+@app.route("/pacientes/chamar-proximo", methods=["POST"])
+def chamar_proximo():
+    return responder_com_flash(acao_chamar_proximo(request.form.get("local", "")))
+
+
+@app.route("/pacientes/chamar-de-novo/<int:id>", methods=["POST"])
+def chamar_de_novo(id):
+    return responder_com_flash(acao_chamar_de_novo(db.get_or_404(Paciente, id)))
+
+
+@app.route("/pacientes/finalizar/<int:id>", methods=["POST"])
+def finalizar_atendimento(id):
+    return responder_com_flash(acao_concluir(db.get_or_404(Paciente, id)))
+
+
+@app.route("/pacientes/nao-compareceu/<int:id>", methods=["POST"])
+def nao_compareceu(id):
+    return responder_com_flash(acao_nao_compareceu(db.get_or_404(Paciente, id)))
 
 
 @app.route("/pacientes/excluir/<int:id>", methods=["POST"])
@@ -1388,6 +1434,137 @@ def redefinir_senha(id):
         return redirect(url_for("usuarios"))
 
     return render_template("redefinir_senha.html", usuario=usuario)
+
+
+# ---------- API JSON (usada pelo frontend em React) ----------
+#
+# As mesmas regras das páginas HTML, mas respondendo com DADOS (JSON)
+# em vez de páginas prontas. Quem desenha a tela é o React.
+#
+# - Login: o mesmo cookie de sessão do Flask (o Vite faz o React e o
+#   Flask parecerem um site só, então o navegador manda o cookie).
+# - CSRF: o React pega o código em /api/sessao e manda de volta no
+#   cabeçalho X-CSRFToken de todo POST (o Flask-WTF confere sozinho).
+# - Erros: código HTTP + {"erro": "mensagem"}.
+
+def usuario_json(usuario):
+    return {
+        "nome": usuario.nome,
+        "login": usuario.login,
+        "admin": usuario.admin,
+        "trocar_senha": usuario.trocar_senha,
+    }
+
+
+def paciente_json(paciente, posicao=None):
+    """Um paciente em formato de dicionário (vira JSON).
+
+    Os horários e durações já vão FORMATADOS ("14:32", "15 min"):
+    assim o React só mostra, e a formatação fica igual à do Flask.
+    """
+    return {
+        "id": paciente.id,
+        "nome": paciente.nome,
+        "cpf": formatar_cpf(paciente.cpf),
+        "telefone": paciente.telefone or "",
+        "observacoes": paciente.observacoes or "",
+        "prioridade": paciente.prioridade,
+        "status": paciente.status,
+        "local": paciente.local,
+        "posicao": posicao,
+        "chegada": formatar_hora(paciente.chegada),
+        "chamado_em": formatar_hora(paciente.chamado_em),
+        "esperando_ha": formatar_duracao(paciente.chegada),
+        "esperou": formatar_duracao(paciente.chegada, paciente.chamado_em),
+        "duracao": formatar_duracao(paciente.chamado_em, paciente.concluido_em),
+        "encerrado_em": (
+            paciente.concluido_em.strftime("%d/%m %H:%M") if paciente.concluido_em else None
+        ),
+        "foi_rechamado": paciente.foi_rechamado,
+        "ultima_chamada": formatar_hora(paciente.ultima_chamada),
+    }
+
+
+def resposta_da_acao(resultado):
+    """API: (deu_certo, mensagem) -> JSON. 409 = "não deu, por causa do
+    estado atual" (ex.: fila vazia, paciente que já saiu do atendimento)."""
+    deu_certo, mensagem = resultado
+    if deu_certo:
+        return jsonify(mensagem=mensagem)
+    return jsonify(erro=mensagem), 409
+
+
+@app.get("/api/sessao")
+def api_sessao():
+    """Quem está logado (ou null) + o código CSRF para os próximos POSTs.
+
+    É a primeira coisa que o React pede ao abrir.
+    """
+    usuario = usuario_json(current_user) if current_user.is_authenticated else None
+    return jsonify(usuario=usuario, csrf=generate_csrf())
+
+
+@app.post("/api/login")
+def api_login():
+    dados = request.get_json(silent=True) or {}
+    login_digitado = login_digitado_do(dados.get("login"))
+
+    # As MESMAS regras da página de login (bloqueio, tempo igual...)
+    usuario, erro = autenticar(login_digitado, str(dados.get("senha", "")))
+    if erro:
+        return jsonify(erro=erro), 401
+
+    login_user(usuario)
+    return jsonify(usuario=usuario_json(usuario))
+
+
+@app.post("/api/logout")
+def api_logout():
+    logout_user()
+    return jsonify(mensagem="Você saiu do sistema.")
+
+
+@app.get("/api/pacientes")
+def api_pacientes():
+    termo = request.args.get("q", "").strip()
+    listas = listas_de_pacientes(termo)
+    posicoes = listas["posicoes"]
+
+    return jsonify(
+        em_atendimento=[paciente_json(p) for p in listas["em_atendimento"]],
+        fila=[paciente_json(p, posicoes[p.id]) for p in listas["fila"]],
+        historico=[paciente_json(p) for p in listas["concluidos"]],
+        # Fila COMPLETA (mesmo com busca): para ligar/desligar "Chamar próximo"
+        total_na_fila=len(posicoes),
+        locais=nomes_dos_locais_ativos(),
+        ultimo_local=session.get("ultimo_local"),
+    )
+
+
+@app.post("/api/pacientes/chamar-proximo")
+def api_chamar_proximo():
+    dados = request.get_json(silent=True) or {}
+    return resposta_da_acao(acao_chamar_proximo(str(dados.get("local", ""))))
+
+
+# Uma rota para as três ações sobre um paciente em atendimento
+ACOES_DE_ATENDIMENTO = {
+    "concluir": acao_concluir,
+    "chamar-de-novo": acao_chamar_de_novo,
+    "nao-compareceu": acao_nao_compareceu,
+}
+
+
+@app.post("/api/pacientes/<int:id>/<acao>")
+def api_acao_paciente(id, acao):
+    if acao not in ACOES_DE_ATENDIMENTO:
+        return jsonify(erro="Ação desconhecida."), 404
+
+    paciente = db.session.get(Paciente, id)
+    if paciente is None:
+        return jsonify(erro="Paciente não encontrado."), 404
+
+    return resposta_da_acao(ACOES_DE_ATENDIMENTO[acao](paciente))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 // manda o React desenhar o componente <App /> dentro dela.
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import './app.css'
 import './painel.css'
 import App from './App.jsx'
 

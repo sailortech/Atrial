@@ -2,7 +2,7 @@
 
 import pytest
 
-from app import Paciente, Usuario, app, endereco_seguro
+from app import PAGINAS_PUBLICAS, Paciente, Usuario, app, endereco_seguro
 from conftest import SENHA_TESTE
 
 
@@ -40,19 +40,26 @@ def test_paginas_publicas_abrem_sem_login(cliente_anonimo, pagina):
 def test_todas_as_rotas_novas_nascem_protegidas(cliente_anonimo):
     """Rede de segurança: percorre TODAS as rotas do app.
     Se alguém criar uma rota e ela abrir sem login, este teste avisa."""
-    publicas = {"login", "static", "painel", "painel_dados"}
+    # Escrita AQUI de propósito (e comparada com a do app): tornar uma
+    # página pública exige mexer nos dois lugares, ou seja, uma decisão.
+    publicas = {"login", "static", "painel", "painel_dados", "api_sessao", "api_login"}
+    assert PAGINAS_PUBLICAS == publicas
 
     for regra in app.url_map.iter_rules():
         if regra.endpoint in publicas:
             continue
-        # Troca <int:id> por 1 para montar um endereço de verdade
-        endereco = regra.rule.replace("<int:id>", "1")
+        # Troca <int:id> e <acao> por valores para montar um endereço de verdade
+        endereco = regra.rule.replace("<int:id>", "1").replace("<acao>", "concluir")
         metodo = "post" if "POST" in regra.methods else "get"
 
         resposta = getattr(cliente_anonimo, metodo)(endereco)
 
-        assert resposta.status_code == 302, f"{endereco} abriu sem login!"
-        assert resposta.location.startswith("/login")
+        if endereco.startswith("/api/"):
+            # API: responde 401 em JSON (o React mostra a tela de login)
+            assert resposta.status_code == 401, f"{endereco} abriu sem login!"
+        else:
+            assert resposta.status_code == 302, f"{endereco} abriu sem login!"
+            assert resposta.location.startswith("/login")
 
 
 # ---------- Entrar e sair ----------

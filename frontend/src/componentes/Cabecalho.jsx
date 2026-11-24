@@ -1,0 +1,27 @@
+import { NavLink } from 'react-router-dom'
+
+import { useSessao } from '../sessao.jsx'
+
+// Barra do topo das telas da recepção
+export default function Cabecalho() {
+  const { usuario, sair } = useSessao()
+
+  return (
+    <header className="cabecalho">
+      <span className="marca">Atrial</span>
+
+      <nav>
+        {/* NavLink = link que sabe se está na página atual
+            (ganha a classe "active" sozinho) */}
+        <NavLink to="/pacientes">Pacientes</NavLink>
+        {/* target="_blank": abre a TV em outra aba */}
+        <a href="/painel" target="_blank" rel="noreferrer">Painel da TV</a>
+      </nav>
+
+      <div className="usuario">
+        <span>{usuario.nome}</span>
+        <button type="button" onClick={sair}>Sair</button>
+      </div>
+    </header>
+  )
+}

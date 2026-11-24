@@ -1,0 +1,303 @@
+/* Visual das telas da recepção (login, pacientes...).
+   O painel da TV tem o seu próprio, em painel.css. */
+
+:root {
+  --texto: #222;
+  --texto-suave: #555;
+  --linha: #ddd;
+  --fundo-cabecalho: #f7f7f5;
+  --principal: #2a78d6;
+  --principal-escuro: #1f5fae;
+  --sucesso-fundo: #d1e7dd;
+  --sucesso-texto: #0f5132;
+  --erro-fundo: #f8d7da;
+  --erro-texto: #842029;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: var(--texto);
+  background: #fff;
+}
+
+/* ----- Estrutura ----- */
+
+.pagina {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.pagina.estreita {
+  max-width: 380px;
+  padding-top: 64px;
+}
+
+.carregando {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--texto-suave);
+}
+
+.marca {
+  font-weight: bold;
+  font-size: 1.4rem;
+}
+
+h1.marca {
+  font-size: 2rem;
+  margin: 0 0 8px;
+}
+
+/* ----- Cabeçalho ----- */
+
+.cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 12px 24px;
+  background: var(--fundo-cabecalho);
+  border-bottom: 1px solid var(--linha);
+}
+
+.cabecalho nav {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+}
+
+.cabecalho nav a {
+  color: var(--texto);
+  text-decoration: none;
+  padding: 4px 2px;
+}
+
+/* "active": classe que o NavLink coloca sozinho na página atual */
+.cabecalho nav a.active {
+  font-weight: bold;
+  border-bottom: 2px solid var(--texto);
+}
+
+.usuario {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--texto-suave);
+}
+
+/* ----- Botões e campos ----- */
+
+button {
+  font: inherit;
+  padding: 8px 14px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fff;
+  color: var(--texto);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #f2f2f2;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.principal {
+  background: var(--principal);
+  border-color: var(--principal);
+  color: #fff;
+}
+
+button.principal:hover:not(:disabled) {
+  background: var(--principal-escuro);
+}
+
+/* Botão com cara de link (ações raras ou secundárias) */
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--principal);
+  text-decoration: underline;
+}
+
+button.link:hover:not(:disabled) {
+  background: none;
+}
+
+button.link.perigo {
+  color: var(--erro-texto);
+}
+
+input,
+select {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+}
+
+.formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.formulario label {
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.formulario button {
+  margin-top: 16px;
+}
+
+/* ----- Mensagens ----- */
+
+.mensagem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 4px;
+}
+
+.mensagem.sucesso {
+  background: var(--sucesso-fundo);
+  color: var(--sucesso-texto);
+}
+
+.mensagem.erro {
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
+
+.mensagem .fechar {
+  border: none;
+  background: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0 4px;
+  color: inherit;
+}
+
+/* ----- Tela de pacientes ----- */
+
+.barra-chamada {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.dica {
+  color: var(--texto-suave);
+}
+
+.busca {
+  width: 100%;
+  max-width: 400px;
+}
+
+.busca-ativa {
+  color: var(--texto-suave);
+}
+
+section {
+  margin-top: 32px;
+}
+
+.vazio {
+  color: #888;
+  font-style: italic;
+}
+
+/* Tabelas largas rolam de lado no celular, em vez de quebrar a página */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  display: block;
+  overflow-x: auto;
+}
+
+@media (min-width: 900px) {
+  table {
+    display: table;
+  }
+}
+
+th,
+td {
+  border: 1px solid var(--linha);
+  padding: 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+th {
+  background: #f2f2f2;
+}
+
+tr.em-atendimento td {
+  background: #eef7f1;
+}
+
+td.acoes {
+  white-space: nowrap;
+}
+
+td.acoes button {
+  margin-right: 6px;
+}
+
+td.acoes .link {
+  display: block;
+  margin-top: 6px;
+}
+
+.rechamado {
+  display: block;
+  margin-top: 6px;
+  color: var(--texto-suave);
+}
+
+.historico {
+  color: #666;
+}
+
+tr.ausente td {
+  color: var(--erro-texto);
+}
+
+/* Etiquetas de prioridade */
+.prioridade {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.9em;
+  font-weight: bold;
+  background: #eee;
+}
+
+.prioridade.preferencial {
+  background: #fff3cd;
+  color: #664d03;
+}
+
+.prioridade.urgente {
+  background: var(--erro-fundo);
+  color: var(--erro-texto);
+}
