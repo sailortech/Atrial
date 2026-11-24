@@ -65,11 +65,17 @@
                 </td>
                 <td>{{ usuario.login }}</td>
                 <td>{{ usuario.papel }}</td>
-                <td>{{ "Ativo" if usuario.ativo else "Desativado" }}</td>
+                <td>
+                    {{ "Ativo" if usuario.ativo else "Desativado" }}
+                    {% if usuario.trocar_senha %}<br><small>senha provisória</small>{% endif %}
+                </td>
                 <td>
                     {# Os botões não aparecem na própria linha: ninguém
                        mexe no próprio acesso (o servidor também confere) #}
                     {% if usuario.id != current_user.id %}
+                    <a href="{{ url_for('redefinir_senha', id=usuario.id) }}">
+                        <button type="button" class="secundario">Redefinir senha</button>
+                    </a>
                     <form method="POST" action="{{ url_for('alterar_usuario', id=usuario.id, acao='admin') }}">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="secundario">

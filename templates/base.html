@@ -52,7 +52,11 @@
 
             <form method="POST" action="{{ url_for('logout') }}" class="sair">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <span>{{ current_user.nome }}</span>
+                {# Clicar no próprio nome leva para a troca de senha #}
+                <a href="{{ url_for('minha_senha') }}" title="Trocar minha senha"
+                   class="{% if request.endpoint == 'minha_senha' %}ativo{% endif %}">
+                    {{ current_user.nome }}
+                </a>
                 <button type="submit">Sair</button>
             </form>
         </nav>

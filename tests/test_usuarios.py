@@ -14,6 +14,8 @@ ROTAS_DE_ADMIN = [
     ("post", "/usuarios"),
     ("post", "/usuarios/1/ativo"),
     ("post", "/usuarios/1/admin"),
+    ("get", "/usuarios/1/senha"),
+    ("post", "/usuarios/1/senha"),
 ]
 
 
@@ -56,16 +58,24 @@ def test_menu_da_administracao_mostra_tudo(cliente_admin):
 
 
 def test_toda_rota_de_admin_esta_na_lista():
-    """Rede de segurança: se alguém criar uma rota nova de admin e não
-    colocar na lista ROTAS_DE_ADMIN acima, este teste lembra de testá-la."""
-    rotas_protegidas = {
-        regra.rule.split("/")[1]
-        for regra in flask_app.url_map.iter_rules()
-        if regra.endpoint in {"locais", "alternar_local", "usuarios", "alterar_usuario"}
+    """Rede de segurança: o decorador @admin_obrigatorio deixa uma
+    etiqueta (so_admin) em cada rota. Se alguém criar uma rota de admin
+    e não colocar em ROTAS_DE_ADMIN acima, este teste avisa."""
+    so_admin = {
+        endpoint
+        for endpoint, funcao in flask_app.view_functions.items()
+        if getattr(funcao, "so_admin", False)
     }
-    testadas = {endereco.split("/")[1] for _, endereco in ROTAS_DE_ADMIN}
 
-    assert rotas_protegidas <= testadas
+    # Descobre qual rota (endpoint) atende cada endereço da lista
+    mapa = flask_app.url_map.bind("localhost")
+    testadas = {
+        mapa.match(endereco, method=metodo.upper())[0]
+        for metodo, endereco in ROTAS_DE_ADMIN
+    }
+
+    assert so_admin, "nenhuma rota com a etiqueta? o decorador mudou?"
+    assert so_admin == testadas
 
 
 # ---------- Criar usuário pela página ----------

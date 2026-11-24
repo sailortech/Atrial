@@ -175,6 +175,11 @@ class Usuario(UserMixin, db.Model):
     # Não apagamos: o registro de quem existiu continua no banco.
     ativo = db.Column(db.Boolean, nullable=False, default=True)
 
+    # True quando a senha foi definida pela ADMINISTRAÇÃO (cadastro ou
+    # "esqueci a senha"): no próximo acesso a pessoa é obrigada a criar
+    # a sua. Assim ninguém além dela conhece a senha definitiva.
+    trocar_senha = db.Column(db.Boolean, nullable=False, default=False)
+
     @property
     def is_active(self):
         # O Flask-Login consulta is_active no login_user(): para um
@@ -397,6 +402,9 @@ def admin_obrigatorio(rota):
             return redirect(url_for("pacientes"))
         return rota(*args, **kwargs)
 
+    # Uma "etiqueta" na função: os testes procuram todas as rotas
+    # com ela para conferir que nenhuma ficou sem teste de permissão.
+    permitir.so_admin = True
     return permitir
 
 
@@ -414,8 +422,19 @@ def validar_novo_usuario(login, nome, senha):
         )
     elif Usuario.query.filter_by(login=login).first():
         erros.append(f"Já existe o usuário '{login}'.")
+
+    return erros + validar_senha(senha)
+
+
+def validar_senha(senha, confirmacao=None):
+    """Regras de toda senha nova (cadastro, troca e redefinição).
+    confirmacao=None: o formulário não tem campo de confirmação."""
+    erros = []
+
     if len(senha) < 8:
         erros.append("A senha precisa ter pelo menos 8 caracteres.")
+    if confirmacao is not None and senha != confirmacao:
+        erros.append("A confirmação não é igual à nova senha.")
 
     return erros
 
@@ -432,8 +451,16 @@ def exigir_login():
     Proteger tudo por padrão é mais seguro do que marcar rota por rota:
     uma rota nova já nasce protegida, mesmo que alguém esqueça.
     """
-    if request.endpoint in PAGINAS_PUBLICAS or current_user.is_authenticated:
+    if request.endpoint in PAGINAS_PUBLICAS:
         return None  # pode seguir para a rota
+
+    if current_user.is_authenticated:
+        # Senha provisória (dada pela administração)? Até criar a própria,
+        # a pessoa só consegue trocar a senha ou sair.
+        if current_user.trocar_senha and request.endpoint not in {"minha_senha", "logout"}:
+            flash("Crie uma senha sua para continuar.", "erro")
+            return redirect(url_for("minha_senha"))
+        return None
 
     # Guarda para onde a pessoa queria ir, para mandá-la de volta depois.
     # (full_path inclui o ?q=..., mas deixa um "?" sobrando quando não há)
@@ -1121,12 +1148,17 @@ def usuarios():
                 dados={"login": login, "nome": nome, "admin": admin},
             )
 
-        usuario = Usuario(nome=nome, login=login, admin=admin)
+        # trocar_senha=True: a senha inicial foi escolhida pela administração
+        usuario = Usuario(nome=nome, login=login, admin=admin, trocar_senha=True)
         usuario.definir_senha(senha)
         db.session.add(usuario)
         db.session.commit()
 
-        flash(f"Usuário '{login}' criado ({usuario.papel}).", "sucesso")
+        flash(
+            f"Usuário '{login}' criado ({usuario.papel}). "
+            "No primeiro acesso, a pessoa vai criar a própria senha.",
+            "sucesso"
+        )
         return redirect(url_for("usuarios"))
 
     return render_template("usuarios.html", usuarios=lista_de_usuarios(), dados={})
@@ -1167,6 +1199,72 @@ def alterar_usuario(id, acao):
     flash(f"Usuário '{usuario.login}' {mensagem}.", "sucesso")
 
     return redirect(url_for("usuarios"))
+
+
+# ---------- Senhas ----------
+
+@app.route("/minha-senha", methods=["GET", "POST"])
+def minha_senha():
+    """Qualquer pessoa logada troca a PRÓPRIA senha."""
+
+    if request.method == "POST":
+        atual = request.form.get("atual", "")
+        nova = request.form.get("nova", "")
+        confirmacao = request.form.get("confirmacao", "")
+
+        erros = []
+        # Pedir a senha atual protege quem deixou o computador logado:
+        # quem sentar ali não consegue trocar a senha e "roubar" a conta.
+        if not current_user.confere_senha(atual):
+            erros.append("A senha atual está incorreta.")
+        erros += validar_senha(nova, confirmacao)
+        if not erros and nova == atual:
+            erros.append("A nova senha precisa ser diferente da atual.")
+
+        if erros:
+            mostrar_erros(erros)
+            return render_template("minha_senha.html")
+
+        current_user.definir_senha(nova)
+        current_user.trocar_senha = False
+        db.session.commit()
+
+        flash("Senha alterada.", "sucesso")
+        return redirect(url_for("pacientes"))
+
+    return render_template("minha_senha.html")
+
+
+@app.route("/usuarios/<int:id>/senha", methods=["GET", "POST"])
+@admin_obrigatorio
+def redefinir_senha(id):
+    """A administração dá uma senha PROVISÓRIA para quem esqueceu a sua."""
+    usuario = db.get_or_404(Usuario, id)
+
+    if usuario.id == current_user.id:
+        # Para a própria senha existe "Minha senha" (que pede a atual)
+        return redirect(url_for("minha_senha"))
+
+    if request.method == "POST":
+        nova = request.form.get("nova", "")
+        erros = validar_senha(nova)
+
+        if erros:
+            mostrar_erros(erros)
+            return render_template("redefinir_senha.html", usuario=usuario)
+
+        usuario.definir_senha(nova)
+        usuario.trocar_senha = True  # no próximo acesso, cria a própria
+        db.session.commit()
+
+        flash(
+            f"Senha provisória definida para '{usuario.login}'. "
+            "No próximo acesso, a pessoa vai criar a própria senha.",
+            "sucesso"
+        )
+        return redirect(url_for("usuarios"))
+
+    return render_template("redefinir_senha.html", usuario=usuario)
 
 
 if __name__ == "__main__":

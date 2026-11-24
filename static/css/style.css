@@ -552,3 +552,9 @@ label.caixa {
 label.caixa input {
     width: auto;
 }
+
+/* ===== Senhas ===== */
+
+.formulario-estreito {
+    max-width: 420px;
+}
