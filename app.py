@@ -3,11 +3,12 @@ import re
 import secrets
 import unicodedata
 from datetime import date, datetime, timedelta
+from functools import wraps
 from pathlib import Path
 
 import click
 from flask import (
-    Flask, flash, redirect, render_template, request, session, url_for
+    Flask, abort, flash, redirect, render_template, request, session, url_for
 )
 
 from flask_login import (
@@ -165,6 +166,24 @@ class Usuario(UserMixin, db.Model):
     # digital dela que não dá para desfazer. Para conferir, calculamos
     # o hash do que foi digitado e comparamos.
     senha_hash = db.Column(db.String(255), nullable=False)
+
+    # Papel: administração (True) pode mexer em locais e usuários;
+    # recepção (False) só atende a fila e vê o relatório.
+    admin = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Desativado = não consegue mais entrar (ex.: saiu da clínica).
+    # Não apagamos: o registro de quem existiu continua no banco.
+    ativo = db.Column(db.Boolean, nullable=False, default=True)
+
+    @property
+    def is_active(self):
+        # O Flask-Login consulta is_active no login_user(): para um
+        # usuário inativo, ele se recusa a fazer o login.
+        return self.ativo
+
+    @property
+    def papel(self):
+        return "Administração" if self.admin else "Recepção"
 
     def definir_senha(self, senha):
         self.senha_hash = generate_password_hash(senha)
@@ -348,8 +367,57 @@ login_manager = LoginManager(app)
 @login_manager.user_loader
 def carregar_usuario(usuario_id):
     """A sessão (o cookie) guarda só o id do usuário. A cada página,
-    o Flask-Login chama esta função para buscar o usuário completo."""
-    return db.session.get(Usuario, int(usuario_id))
+    o Flask-Login chama esta função para buscar o usuário completo.
+
+    Usuário desativado -> None: o Flask-Login trata como "não logado".
+    Assim quem for desativado é posto para fora NA HORA, mesmo que
+    esteja com o sistema aberto (e não só no próximo login).
+    """
+    usuario = db.session.get(Usuario, int(usuario_id))
+    if usuario is None or not usuario.ativo:
+        return None
+    return usuario
+
+
+def admin_obrigatorio(rota):
+    """Decorador: a rota só abre para quem é da administração.
+
+        @app.route("/locais")
+        @admin_obrigatorio
+        def locais(): ...
+
+    Um decorador "embrulha" a função da rota: o Python troca locais
+    por permitir(locais), que confere o papel ANTES de chamar a rota.
+    (O login em si já foi exigido pelo before_request.)
+    """
+    @wraps(rota)  # mantém o nome da função (o Flask usa no url_for)
+    def permitir(*args, **kwargs):
+        if not current_user.admin:
+            flash("Só a administração pode acessar essa página.", "erro")
+            return redirect(url_for("pacientes"))
+        return rota(*args, **kwargs)
+
+    return permitir
+
+
+def validar_novo_usuario(login, nome, senha):
+    """Regras para criar usuário (usadas pela página e pelo comando).
+    Devolve a lista de erros; vazia = tudo certo."""
+    erros = []
+
+    if not nome:
+        erros.append("Informe o nome.")
+    if not re.fullmatch(r"[a-z0-9._-]{3,50}", login):
+        erros.append(
+            "O usuário deve ter de 3 a 50 caracteres: letras sem acento, "
+            "números, ponto, hífen ou sublinhado."
+        )
+    elif Usuario.query.filter_by(login=login).first():
+        erros.append(f"Já existe o usuário '{login}'.")
+    if len(senha) < 8:
+        erros.append("A senha precisa ter pelo menos 8 caracteres.")
+
+    return erros
 
 
 # Páginas que qualquer um pode ver, sem login.
@@ -403,6 +471,12 @@ def login():
         usuario = Usuario.query.filter_by(login=login_digitado).first()
 
         if usuario and usuario.confere_senha(senha):
+            # Só contamos que o usuário está desativado para quem acertou
+            # a senha: assim isso não vira um jeito de descobrir logins.
+            if not usuario.ativo:
+                flash("Este usuário foi desativado. Fale com a administração.", "erro")
+                return render_template("login.html", login=login_digitado, proxima=proxima)
+
             login_user(usuario)
             flash(f"Olá, {usuario.nome}!", "sucesso")
             return redirect(proxima if endereco_seguro(proxima) else url_for("pacientes"))
@@ -428,28 +502,30 @@ def logout():
 @click.argument("login")
 @click.option("--nome", prompt="Nome de quem vai usar")
 @click.password_option("--senha", prompt="Senha")
-def criar_usuario(login, nome, senha):
-    """Cria um usuário da recepção. Uso:
+@click.option("--admin", is_flag=True, help="Cria como administração.")
+def criar_usuario(login, nome, senha, admin):
+    """Cria um usuário. Uso:
 
         flask --app app criar-usuario maria
+        flask --app app criar-usuario layanne --admin
 
-    (Não existe página de "criar conta": só quem tem acesso
-    ao servidor pode cadastrar quem entra no sistema.)
+    Serve para criar o PRIMEIRO administrador; depois disso, a
+    administração pode cadastrar os outros pela página Usuários.
     """
     login = login.strip().lower()
+    nome = nome.strip()
 
-    if Usuario.query.filter_by(login=login).first():
-        raise click.ClickException(f"Já existe o usuário '{login}'.")
+    erros = validar_novo_usuario(login, nome, senha)
+    if erros:
+        raise click.ClickException(" ".join(erros))
 
-    if len(senha) < 8:
-        raise click.ClickException("A senha precisa ter pelo menos 8 caracteres.")
-
-    usuario = Usuario(nome=nome.strip(), login=login)
+    usuario = Usuario(nome=nome, login=login, admin=admin)
     usuario.definir_senha(senha)
     db.session.add(usuario)
     db.session.commit()
 
-    click.echo(f"Usuário '{login}' criado.")
+    papel = "administração" if admin else "recepção"
+    click.echo(f"Usuário '{login}' criado ({papel}).")
 
 
 @app.errorhandler(CSRFError)
@@ -968,6 +1044,7 @@ def excluir_paciente(id):
 # ---------- Locais (cadastro) ----------
 
 @app.route("/locais", methods=["GET", "POST"])
+@admin_obrigatorio
 def locais():
 
     if request.method == "POST":
@@ -1002,6 +1079,7 @@ def locais():
 
 
 @app.route("/locais/<int:id>/alternar", methods=["POST"])
+@admin_obrigatorio
 def alternar_local(id):
     """Desativa um local ativo, ou reativa um desativado."""
     local = db.get_or_404(Local, id)
@@ -1018,6 +1096,77 @@ def alternar_local(id):
     flash(f"Local \"{local.nome}\" {situacao}.", "sucesso")
 
     return redirect(url_for("locais"))
+
+
+# ---------- Usuários (só administração) ----------
+
+@app.route("/usuarios", methods=["GET", "POST"])
+@admin_obrigatorio
+def usuarios():
+
+    if request.method == "POST":
+        login = request.form.get("login", "").strip().lower()
+        nome = request.form.get("nome", "").strip()
+        senha = request.form.get("senha", "")
+        # Caixa de seleção: só vem no formulário quando está marcada
+        admin = request.form.get("admin") == "sim"
+
+        erros = validar_novo_usuario(login, nome, senha)
+
+        if erros:
+            mostrar_erros(erros)
+            # Devolve o que foi digitado (MENOS a senha, por segurança)
+            return render_template(
+                "usuarios.html", usuarios=lista_de_usuarios(),
+                dados={"login": login, "nome": nome, "admin": admin},
+            )
+
+        usuario = Usuario(nome=nome, login=login, admin=admin)
+        usuario.definir_senha(senha)
+        db.session.add(usuario)
+        db.session.commit()
+
+        flash(f"Usuário '{login}' criado ({usuario.papel}).", "sucesso")
+        return redirect(url_for("usuarios"))
+
+    return render_template("usuarios.html", usuarios=lista_de_usuarios(), dados={})
+
+
+def lista_de_usuarios():
+    # Ativos primeiro; depois por nome
+    return Usuario.query.order_by(Usuario.ativo.desc(), Usuario.nome).all()
+
+
+@app.route("/usuarios/<int:id>/<acao>", methods=["POST"])
+@admin_obrigatorio
+def alterar_usuario(id, acao):
+    """acao: 'ativo' (desativa/reativa) ou 'admin' (troca o papel)."""
+    usuario = db.get_or_404(Usuario, id)
+
+    if acao not in ("ativo", "admin"):
+        abort(404)
+
+    # Ninguém mexe no PRÓPRIO acesso: evita alguém se trancar fora
+    # sem querer (ex.: o único admin tirando o próprio papel).
+    #
+    # Essa regra sozinha já garante que o sistema nunca fica sem admin:
+    # quem está aqui é um admin ativo (o decorador garante), e ele só
+    # pode mexer nos OUTROS. Então sempre sobra pelo menos ele mesmo.
+    if usuario.id == current_user.id:
+        flash("Você não pode alterar o seu próprio acesso.", "erro")
+        return redirect(url_for("usuarios"))
+
+    if acao == "ativo":
+        usuario.ativo = not usuario.ativo
+        mensagem = "reativado" if usuario.ativo else "desativado"
+    else:
+        usuario.admin = not usuario.admin
+        mensagem = f"agora é da {usuario.papel.lower()}"
+
+    db.session.commit()
+    flash(f"Usuário '{usuario.login}' {mensagem}.", "sucesso")
+
+    return redirect(url_for("usuarios"))
 
 
 if __name__ == "__main__":

@@ -534,3 +534,21 @@ tr.ausente td {
 tr.inativo td {
     color: #888;
 }
+
+/* ===== Usuários ===== */
+
+.novo-usuario {
+    max-width: 420px;
+}
+
+/* Caixa de seleção com o texto ao lado (não embaixo) */
+label.caixa {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: normal;
+}
+
+label.caixa input {
+    width: auto;
+}

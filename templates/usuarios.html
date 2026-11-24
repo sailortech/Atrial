@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block titulo %}Usuários{% endblock %}
+
+{% block conteudo %}
+
+<h2>Usuários</h2>
+
+<p class="ajuda">
+    <strong>Recepção</strong> atende a fila e vê o relatório.
+    <strong>Administração</strong> também cadastra locais e usuários.
+    Quem sair da clínica deve ser <em>desativado</em>: perde o acesso na hora,
+    mas o cadastro continua registrado.
+</p>
+
+<!-- ===== Novo usuário ===== -->
+<section>
+    <h3>Novo usuário</h3>
+
+    <form method="POST" action="{{ url_for('usuarios') }}" class="novo-usuario">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <label for="nome">Nome</label>
+        <input type="text" id="nome" name="nome" value="{{ dados.nome or '' }}" required>
+
+        <label for="login">Usuário (para entrar no sistema)</label>
+        <input type="text" id="login" name="login" value="{{ dados.login or '' }}"
+               pattern="[a-zA-Z0-9._\-]{3,50}" autocomplete="off" required
+               placeholder="ex.: maria.souza">
+
+        <label for="senha">Senha inicial (mínimo 8 caracteres)</label>
+        {# autocomplete="new-password": o navegador não preenche com a SUA senha #}
+        <input type="password" id="senha" name="senha" minlength="8"
+               autocomplete="new-password" required>
+
+        <label class="caixa">
+            <input type="checkbox" name="admin" value="sim" {% if dados.admin %}checked{% endif %}>
+            Administração (pode cadastrar locais e usuários)
+        </label>
+
+        <button type="submit">Criar usuário</button>
+    </form>
+</section>
+
+<!-- ===== Lista ===== -->
+<section>
+    <h3>Cadastrados ({{ usuarios|length }})</h3>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Usuário</th>
+                <th>Papel</th>
+                <th>Situação</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for usuario in usuarios %}
+            <tr {% if not usuario.ativo %}class="inativo"{% endif %}>
+                <td>
+                    {{ usuario.nome }}
+                    {% if usuario.id == current_user.id %}<small>(você)</small>{% endif %}
+                </td>
+                <td>{{ usuario.login }}</td>
+                <td>{{ usuario.papel }}</td>
+                <td>{{ "Ativo" if usuario.ativo else "Desativado" }}</td>
+                <td>
+                    {# Os botões não aparecem na própria linha: ninguém
+                       mexe no próprio acesso (o servidor também confere) #}
+                    {% if usuario.id != current_user.id %}
+                    <form method="POST" action="{{ url_for('alterar_usuario', id=usuario.id, acao='admin') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="secundario">
+                            {{ "Tornar recepção" if usuario.admin else "Tornar administração" }}
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ url_for('alterar_usuario', id=usuario.id, acao='ativo') }}"
+                          {% if usuario.ativo %}onsubmit="return confirm('Desativar este usuário? Ele perde o acesso na hora.');"{% endif %}>
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="secundario">
+                            {{ "Desativar" if usuario.ativo else "Reativar" }}
+                        </button>
+                    </form>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+{% endblock %}

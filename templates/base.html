@@ -33,10 +33,18 @@
                class="{% if request.endpoint == 'relatorio' %}ativo{% endif %}">
                 Relatório
             </a>
+            {# Só a administração vê estes itens (e as rotas também conferem:
+               esconder o link sozinho não protege nada) #}
+            {% if current_user.admin %}
             <a href="{{ url_for('locais') }}"
                class="{% if request.endpoint == 'locais' %}ativo{% endif %}">
                 Locais
             </a>
+            <a href="{{ url_for('usuarios') }}"
+               class="{% if request.endpoint == 'usuarios' %}ativo{% endif %}">
+                Usuários
+            </a>
+            {% endif %}
             {# target="_blank": abre em outra aba, para colocar na TV #}
             <a href="{{ url_for('painel') }}" target="_blank">
                 Painel da TV

@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
+from flask import g
+from flask.testing import FlaskClient
 from werkzeug.security import generate_password_hash
 
 # Banco em memória: some ao fim de cada teste e NUNCA toca no atrial.db.
@@ -26,6 +28,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import app as flask_app, db, Local, Paciente, Usuario  # noqa: E402
 
 LOCAIS_INICIAIS = ["Triagem", "Consultório 1", "Consultório 2", "Consultório 3"]
+
+
+class ClienteDeTeste(FlaskClient):
+    """Navegador de mentira que começa cada requisição "do zero".
+
+    Por quê: a fixture app deixa o contexto da aplicação aberto durante
+    o teste todo, e o Flask então REAPROVEITA esse contexto (e o g) em
+    todas as requisições. O Flask-Login guarda o usuário da requisição
+    em g._login_user; sem limpar, o navegador anônimo "herdaria" o login
+    feito por outro navegador no mesmo teste, e um teste de segurança
+    poderia passar quando deveria falhar.
+    No servidor de verdade cada requisição tem seu próprio g, então
+    isso só acontece aqui nos testes.
+    """
+
+    def open(self, *args, **kwargs):
+        g.pop("_login_user", None)
+        return super().open(*args, **kwargs)
+
+
+flask_app.test_client_class = ClienteDeTeste
 
 
 @pytest.fixture
@@ -73,8 +96,15 @@ def cliente_anonimo(app):
 
 
 @pytest.fixture
-def cliente(app, usuario):
-    """Navegador de mentira já logado. É o que a maioria dos testes usa."""
+def admin(app):
+    """Uma administradora: login 'bia', senha SENHA_TESTE."""
+    admin = Usuario(nome="Bia Admin", login="bia", senha_hash=HASH_TESTE, admin=True)
+    db.session.add(admin)
+    db.session.commit()
+    return admin
+
+
+def navegador_logado(app, usuario):
     cliente = app.test_client()
 
     # Atalho: em vez de preencher o formulário (e esperar o hash),
@@ -85,6 +115,19 @@ def cliente(app, usuario):
         sessao["_fresh"] = True
 
     return cliente
+
+
+@pytest.fixture
+def cliente(app, usuario):
+    """Navegador logado como RECEPÇÃO. É o que a maioria dos testes usa:
+    cada teste tem só o acesso de que precisa."""
+    return navegador_logado(app, usuario)
+
+
+@pytest.fixture
+def cliente_admin(app, admin):
+    """Navegador logado como ADMINISTRAÇÃO."""
+    return navegador_logado(app, admin)
 
 
 # CPFs válidos (passam na conta dos dígitos verificadores)
