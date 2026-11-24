@@ -1,0 +1,144 @@
+# Atrial
+
+Sistema de fila de atendimento para a recepção de uma clínica, feito em **Flask** como projeto de estudo.
+
+A recepção cadastra quem chega, o sistema organiza a fila por prioridade, quem atende chama o próximo para um consultório, e uma TV na sala de espera mostra quem foi chamado e para onde.
+
+## O que ele faz
+
+**Fila e atendimento**
+- Cadastro de pacientes com validação de CPF (dígitos verificadores) e de data de nascimento.
+- Fila ordenada por prioridade (**Urgente → Preferencial → Normal**) e, no empate, por ordem de chegada.
+- **Chamar próximo** para um local (triagem, consultório...). O último local escolhido fica lembrado.
+- **Chamar de novo**, para quem não apareceu, e **Não compareceu**, para encerrar sem atendimento.
+- Tempo de espera e duração de cada atendimento.
+- Busca por nome ou CPF que ignora acentos e maiúsculas ("joao" acha "João").
+- A página de pacientes se atualiza sozinha a cada 20 segundos.
+
+**Painel da TV** (`/painel`)
+- Mostra quem está sendo chamado e para onde, com as últimas chamadas e quantas pessoas estão na fila.
+- Atualiza a cada 3 segundos, pisca e toca um aviso sonoro a cada chamada. O som precisa de um clique em "Ativar som" quando a TV é ligada, porque os navegadores bloqueiam áudio automático.
+- Mostra só o primeiro nome e a inicial do sobrenome ("Maria S."), porque a tela é pública.
+- Abre sem login.
+
+**Relatório do dia** (`/relatorio`)
+- Chegadas, atendimentos, ausências, espera média e maior espera, e duração média.
+- Gráfico de chegadas por hora, com uma tabela que mostra os mesmos números.
+- Números por prioridade e por local.
+
+**Usuários e segurança**
+- Login obrigatório em todas as páginas, menos no painel da TV.
+- Dois papéis: **Recepção** (fila e relatório) e **Administração** (também cadastra locais e usuários).
+- A administração cadastra pessoas, desativa quem saiu da clínica e redefine senhas esquecidas. Uma senha dada pela administração é provisória e precisa ser trocada no primeiro acesso.
+- Proteção contra CSRF em todos os formulários, senhas guardadas só como *hash*, sessões derrubadas quando a senha muda e bloqueio de 15 minutos depois de 5 senhas erradas.
+
+## Como instalar
+
+Requisitos: **Python 3.14** (a versão usada e testada no desenvolvimento; versões um pouco mais antigas provavelmente funcionam, mas não foram testadas) e **Git**.
+
+Os comandos abaixo são para o **PowerShell (Windows)**. No Linux e no macOS, troque `venv\Scripts\python` por `venv/bin/python`.
+
+```powershell
+# 1. Baixe o projeto e entre na pasta
+git clone <endereço-do-repositório> Atrial
+cd Atrial
+
+# 2. Crie o ambiente virtual e instale as dependências
+python -m venv venv
+venv\Scripts\python -m pip install -r requirements-dev.txt
+
+# 3. Crie o banco de dados (aplica todas as migrations)
+venv\Scripts\python -m flask --app app db upgrade
+
+# 4. Crie o primeiro usuário da administração
+#    (o comando pergunta o nome e a senha)
+venv\Scripts\python -m flask --app app criar-usuario seu.login --admin
+```
+
+O banco já nasce com quatro locais: Triagem e Consultório 1, 2 e 3. Eles podem ser mudados depois, na página **Locais**.
+
+> **Por que `python -m flask` em vez de só `flask`?** Assim o comando usa com certeza o Flask instalado no `venv`. Em algumas máquinas, o `flask.exe` do `venv` falha sem mostrar erro.
+
+## Como rodar
+
+```powershell
+venv\Scripts\python -m flask --app app run --debug
+```
+
+Abra **http://127.0.0.1:5000** e entre com o usuário criado no passo 4. Os outros usuários podem ser cadastrados pela página **Usuários**.
+
+O `--debug` reinicia o servidor sozinho quando um arquivo muda, e mostra os erros detalhados no navegador. **Use só no seu computador.** Se o servidor ficar mostrando um erro estranho depois de você editar vários arquivos de uma vez, pare (Ctrl+C) e rode de novo.
+
+### Painel na TV
+
+Abra **http://127.0.0.1:5000/painel** no navegador da TV, em tela cheia (F11), e clique uma vez em **Ativar som**. Para a TV acessar o computador que roda o Atrial, os dois precisam estar na mesma rede, e o servidor precisa ser iniciado com `--host 0.0.0.0`. Nesse caso, a TV usa o endereço IP do computador no lugar de `127.0.0.1`.
+
+## Testes
+
+```powershell
+venv\Scripts\python -m pytest
+```
+
+São mais de 200 testes, e todos rodam em cerca de 10 segundos. Eles usam um banco **em memória**, então nunca tocam no `instance/atrial.db`. Rode os testes depois de qualquer mudança.
+
+Alguns testes funcionam como **redes de segurança**: eles falham se alguém criar uma rota que abre sem login, um formulário sem o código CSRF ou uma rota de administração sem teste de permissão.
+
+## Mudanças no banco (migrations)
+
+A estrutura do banco é controlada pelo **Flask-Migrate** (Alembic). Ao mudar um modelo em `app.py` (por exemplo, criar uma coluna):
+
+```powershell
+venv\Scripts\python -m flask --app app db migrate -m "o que mudou"
+venv\Scripts\python -m flask --app app db upgrade
+```
+
+Sempre **leia o arquivo gerado** em `migrations/versions/` antes do `upgrade`. Duas situações pedem ajuste à mão:
+
+- **Coluna obrigatória (`nullable=False`) numa tabela que já tem dados:** precisa de um `server_default`. Sem ele, o banco não sabe o que colocar nas linhas que já existem.
+- **Dados antigos que precisam ser preenchidos:** a coluna nova nasce vazia nas linhas que já existem. Exemplos no projeto: `0ee83d5ff5b7` (nome para a busca sem acentos) e `a77785478cf8` (última chamada).
+
+Antes de mexer no banco de verdade, faça uma cópia do `instance/atrial.db`. Para desfazer a última migration, use `db downgrade`.
+
+## Configuração
+
+| Variável de ambiente | Para que serve | Se não for definida |
+|---|---|---|
+| `SECRET_KEY` | Assina o cookie de login e os códigos CSRF. Quem souber essa chave consegue se passar por qualquer usuário. | É gerada uma chave aleatória e guardada em `instance/secret_key` |
+| `DATABASE_URL` | Endereço do banco de dados | `sqlite:///atrial.db` (o arquivo fica em `instance/`) |
+
+A pasta `instance/` guarda o banco e a chave secreta, e **não vai para o Git** (está no `.gitignore`).
+
+## Organização do código
+
+```
+app.py                  todo o sistema: modelos, regras, rotas e comandos
+templates/
+  base.html             esqueleto das páginas (menu e mensagens)
+  pacientes.html        fila e atendimento
+  _listas_pacientes.html  as três tabelas da fila (atualizadas sozinhas)
+  _campos_paciente.html   campos do formulário de paciente (cadastro e edição)
+  painel.html           tela da TV (não usa base.html)
+  relatorio.html        relatório do dia e gráfico
+  locais.html, usuarios.html, minha_senha.html, ...
+static/css/style.css    todo o visual
+tests/
+  conftest.py           preparação dos testes (fixtures)
+  test_*.py             um arquivo por assunto
+migrations/versions/    histórico de mudanças do banco
+```
+
+Templates que começam com `_` são **pedaços** incluídos em outras páginas, e não páginas inteiras.
+
+Dentro do `app.py`, as partes estão separadas por comentários (`# ---------- Login ----------`, `# ---------- Relatório do dia ----------`, ...). Os comentários explicam o **porquê** de cada decisão, especialmente nas partes de segurança.
+
+### Algumas decisões de projeto
+
+- **Tudo protegido por padrão:** o login é exigido num `before_request`, e não rota por rota. Uma rota nova já nasce protegida.
+- **O paciente guarda o *nome* do local, não o id:** é o registro do que aconteceu. Se um consultório for desativado depois, o histórico não muda.
+- **Desativar em vez de apagar** (locais e usuários): o histórico continua fazendo sentido.
+- **`chamado_em` × `ultima_chamada`:** a espera é medida até a **primeira** chamada. Chamar de novo quem não apareceu não aumenta a espera no relatório.
+- **Relatório:** as contas são feitas em Python, e não em SQL, porque fica mais fácil de ler. Com o movimento de um dia, são poucas linhas.
+
+## Dependências
+
+`requirements.txt` tem o que o sistema precisa para rodar: Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Login e Flask-WTF. `requirements-dev.txt` acrescenta o **pytest**, que só é usado no desenvolvimento.
