@@ -216,6 +216,55 @@ class Usuario(UserMixin, db.Model):
         return check_password_hash(self.senha_hash, senha)
 
 
+# ---------- Proteção contra "chutar" senhas ----------
+
+LIMITE_DE_ERROS = 5                    # senhas erradas seguidas...
+TEMPO_DE_BLOQUEIO = timedelta(minutes=15)  # ...bloqueiam por este tempo
+
+
+def agora():
+    """datetime.now() numa função própria: nos testes dá para trocá-la
+    (monkeypatch) e "avançar o relógio" sem esperar 15 minutos."""
+    return datetime.now()
+
+
+class TentativaLogin(db.Model):
+    """Erros de senha por LOGIN DIGITADO, exista o usuário ou não.
+
+    Contar também logins que não existem é de propósito: se só contas
+    reais fossem bloqueadas, o bloqueio revelaria quais logins existem.
+    """
+    login = db.Column(db.String(50), primary_key=True)
+    erros = db.Column(db.Integer, nullable=False, default=0)
+    ultimo_erro = db.Column(db.DateTime)
+    bloqueado_ate = db.Column(db.DateTime)
+
+    def bloqueado(self):
+        return self.bloqueado_ate is not None and self.bloqueado_ate > agora()
+
+    def minutos_restantes(self):
+        segundos = (self.bloqueado_ate - agora()).total_seconds()
+        return max(1, int(-(-segundos // 60)))  # arredonda para cima
+
+    def registrar_erro(self):
+        # Erros antigos "vencem": 5 erros espalhados num mês não bloqueiam
+        if self.ultimo_erro and agora() - self.ultimo_erro > TEMPO_DE_BLOQUEIO:
+            self.erros = 0
+
+        self.erros += 1
+        self.ultimo_erro = agora()
+
+        if self.erros >= LIMITE_DE_ERROS:
+            self.bloqueado_ate = agora() + TEMPO_DE_BLOQUEIO
+            self.erros = 0  # depois do bloqueio, começa a contar de novo
+
+
+# Hash de uma senha qualquer, calculado uma vez quando o app inicia.
+# Serve para gastar o MESMO tempo quando o login digitado não existe
+# (veja a rota de login).
+HASH_PARA_IGUALAR_TEMPO = generate_password_hash(secrets.token_hex(16))
+
+
 PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
 
 # Status de quem já saiu da fila e do atendimento (vão para o histórico)
@@ -523,26 +572,60 @@ def login():
     proxima = request.args.get("proxima", "")
 
     if request.method == "POST":
-        login_digitado = request.form.get("login", "").strip().lower()
+        # [:50]: o login vira chave na tabela de tentativas; não deixamos
+        # alguém mandar um texto enorme para encher o banco
+        login_digitado = request.form.get("login", "").strip().lower()[:50]
         senha = request.form.get("senha", "")
+
+        tentativa = db.session.get(TentativaLogin, login_digitado)
+
+        # Bloqueado? Nem confere a senha: senão daria para continuar
+        # "chutando" e só descobrir qual acertou depois do bloqueio.
+        if tentativa and tentativa.bloqueado():
+            flash(
+                "Muitas tentativas com senha errada. Tente de novo em "
+                f"{tentativa.minutos_restantes()} min.",
+                "erro"
+            )
+            return render_template("login.html", login=login_digitado, proxima=proxima)
 
         usuario = Usuario.query.filter_by(login=login_digitado).first()
 
-        if usuario and usuario.confere_senha(senha):
-            # Só contamos que o usuário está desativado para quem acertou
-            # a senha: assim isso não vira um jeito de descobrir logins.
-            if not usuario.ativo:
-                flash("Este usuário foi desativado. Fale com a administração.", "erro")
-                return render_template("login.html", login=login_digitado, proxima=proxima)
+        if usuario:
+            senha_certa = usuario.confere_senha(senha)
+        else:
+            # Login inexistente: confere contra um hash qualquer só para
+            # DEMORAR o mesmo tanto. Sem isso, a resposta rápida entregaria
+            # que o login não existe (quem mede o tempo descobriria).
+            check_password_hash(HASH_PARA_IGUALAR_TEMPO, senha)
+            senha_certa = False
 
-            login_user(usuario)
-            flash(f"Olá, {usuario.nome}!", "sucesso")
-            return redirect(proxima if endereco_seguro(proxima) else url_for("pacientes"))
+        if not senha_certa:
+            if login_digitado:
+                tentativa = tentativa or TentativaLogin(login=login_digitado, erros=0)
+                tentativa.registrar_erro()
+                db.session.add(tentativa)
+                db.session.commit()
 
-        # Mesma mensagem para usuário inexistente e senha errada:
-        # assim ninguém descobre quais logins existem testando.
-        flash("Usuário ou senha incorretos.", "erro")
-        return render_template("login.html", login=login_digitado, proxima=proxima)
+            # Mesma mensagem para usuário inexistente e senha errada:
+            # assim ninguém descobre quais logins existem testando.
+            flash("Usuário ou senha incorretos.", "erro")
+            return render_template("login.html", login=login_digitado, proxima=proxima)
+
+        # Acertou: zera os erros deste login
+        if tentativa:
+            db.session.delete(tentativa)
+            db.session.commit()
+
+        # Só contamos que o usuário está desativado para quem acertou
+        # a senha: assim isso não vira um jeito de descobrir logins.
+        if not usuario.ativo:
+            flash("Este usuário foi desativado. Fale com a administração.", "erro")
+            return render_template("login.html", login=login_digitado, proxima=proxima)
+
+        login_user(usuario)
+        flash(f"Olá, {usuario.nome}!", "sucesso")
+        return redirect(proxima if endereco_seguro(proxima) else url_for("pacientes"))
 
     return render_template("login.html", login="", proxima=proxima)
 

@@ -76,8 +76,11 @@ def app():
 SENHA_TESTE = "senha-de-teste-123"
 
 # O hash da senha é lento DE PROPÓSITO (~0,3s), para dificultar quem
-# tenta adivinhar senhas. Nos testes, calculamos uma vez só e reaproveitamos.
-HASH_TESTE = generate_password_hash(SENHA_TESTE)
+# tenta adivinhar senhas. Nos testes isso só atrasa, então usamos um
+# algoritmo bem leve: check_password_hash lê do PRÓPRIO hash qual
+# algoritmo foi usado ("pbkdf2:sha256:1$..."), e confere rápido.
+# (No sistema de verdade, definir_senha continua usando o lento.)
+HASH_TESTE = generate_password_hash(SENHA_TESTE, method="pbkdf2:sha256:1")
 
 
 @pytest.fixture
