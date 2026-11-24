@@ -123,6 +123,20 @@ class Paciente(db.Model):
     # Vazio em quem foi chamado antes de existir esta coluna.
     local = db.Column(db.String(50))
 
+    # Quando foi chamado pela ÚLTIMA vez (no painel). Igual a chamado_em,
+    # a não ser que tenha sido chamado de novo por não ter aparecido.
+    # chamado_em continua sendo a 1ª chamada: é ela que mede a espera.
+    ultima_chamada = db.Column(db.DateTime)
+
+    @property
+    def foi_rechamado(self):
+        """True se o paciente foi chamado mais de uma vez."""
+        return (
+            self.ultima_chamada is not None
+            and self.chamado_em is not None
+            and self.ultima_chamada > self.chamado_em
+        )
+
     # Nome sem acentos e em minúsculas, só para a busca:
     # "João da Conceição" -> "joao da conceicao". Nunca é mostrado na tela.
     nome_busca = db.Column(db.String(100))
@@ -738,23 +752,25 @@ def dados_do_painel():
     """O que a TV precisa mostrar, em formato de dicionário
     (vira JSON na rota /painel/dados)."""
 
-    # Últimas chamadas: quem foi chamado mais recentemente vem primeiro.
+    # Últimas chamadas: quem foi chamado mais recentemente vem primeiro
+    # (contando o "chamar de novo": quem foi chamado outra vez volta ao topo).
     # Inclui quem já foi concluído, para a lista não "sumir" na TV.
     chamados = Paciente.query.filter(
-        Paciente.chamado_em.isnot(None)
+        Paciente.ultima_chamada.isnot(None)
     ).order_by(
-        Paciente.chamado_em.desc()
+        Paciente.ultima_chamada.desc()
     ).limit(5).all()
 
     def resumo(paciente):
         return {
             # id + horário identificam UMA chamada; o JavaScript
-            # usa isso para saber quando alguém novo foi chamado
-            "chave": f"{paciente.id}-{paciente.chamado_em.isoformat()}",
+            # usa isso para saber quando alguém foi chamado (de novo ou não)
+            "chave": f"{paciente.id}-{paciente.ultima_chamada.isoformat()}",
             "nome": primeiro_nome_e_inicial(paciente.nome),
             "prioridade": paciente.prioridade,
-            "hora": formatar_hora(paciente.chamado_em),
+            "hora": formatar_hora(paciente.ultima_chamada),
             "local": paciente.local,  # None em chamadas antigas
+            "de_novo": paciente.foi_rechamado,
         }
 
     return {
@@ -823,8 +839,10 @@ def chamar_proximo():
     paciente = buscar_por_status("Aguardando").first()
 
     if paciente:
+        agora = datetime.now()
         paciente.status = "Em atendimento"
-        paciente.chamado_em = datetime.now()
+        paciente.chamado_em = agora
+        paciente.ultima_chamada = agora
         paciente.local = local
         db.session.commit()
         flash(
@@ -833,6 +851,23 @@ def chamar_proximo():
         )
     else:
         flash("Não há pacientes aguardando na fila.", "erro")
+
+    return redirect(url_for("pacientes"))
+
+
+@app.route("/pacientes/chamar-de-novo/<int:id>", methods=["POST"])
+def chamar_de_novo(id):
+    """O paciente foi chamado mas não apareceu: chama outra vez.
+
+    Só muda ultima_chamada. Isso basta para o painel mostrar o nome
+    de novo (e tocar o som), sem estragar o tempo de espera do relatório.
+    """
+    paciente = db.get_or_404(Paciente, id)
+
+    if paciente.status == "Em atendimento":
+        paciente.ultima_chamada = datetime.now()
+        db.session.commit()
+        flash(f"Chamando {paciente.nome} novamente.", "sucesso")
 
     return redirect(url_for("pacientes"))
 

@@ -24,7 +24,9 @@
 
     <div class="painel-atual" id="atual">
         {% if dados.atual %}
-        <p class="painel-rotulo">Chamando agora</p>
+        <p class="painel-rotulo">
+            {{ "Chamando novamente" if dados.atual.de_novo else "Chamando agora" }}
+        </p>
         <p class="painel-nome">{{ dados.atual.nome }}</p>
         {% if dados.atual.local %}
         <p class="painel-local">→ {{ dados.atual.local }}</p>
@@ -80,7 +82,8 @@
 
             if (dados.atual) {
                 atual.replaceChildren(
-                    criar("p", "painel-rotulo", "Chamando agora"),
+                    criar("p", "painel-rotulo",
+                        dados.atual.de_novo ? "Chamando novamente" : "Chamando agora"),
                     criar("p", "painel-nome", dados.atual.nome),
                     // Chamadas antigas não têm local: aí a linha não aparece
                     ...(dados.atual.local

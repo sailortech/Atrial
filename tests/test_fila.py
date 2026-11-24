@@ -1,7 +1,7 @@
 """Testes com banco e rotas: ordem da fila, fluxo de status,
 cadastro, busca e painel."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -268,3 +268,77 @@ def test_painel_com_chamada_antiga_sem_local(cliente, criar_paciente):
 
     assert "Antigo S." in html
     assert "→" not in html.split("<script>")[0]  # nada de "→ None"
+
+
+# ---------- Chamar de novo ----------
+# Os pacientes começam "chamados há alguns minutos" (horários no passado).
+# Assim a nova chamada é sempre mais recente, por mais rápido que o
+# teste rode (no Windows, duas chamadas seguidas a datetime.now()
+# podem devolver exatamente o mesmo horário).
+
+def ha_minutos(minutos):
+    return datetime.now() - timedelta(minutes=minutos)
+
+
+def em_atendimento(criar_paciente, nome, local, chamado_ha_min):
+    return criar_paciente(nome, status="Em atendimento", local=local,
+                          chegou_ha_min=chamado_ha_min + 10,
+                          chamado_em=ha_minutos(chamado_ha_min))
+
+
+def test_chamar_de_novo_volta_ao_painel(cliente, criar_paciente):
+    ana = em_atendimento(criar_paciente, "Ana Lima", "Triagem", chamado_ha_min=5)
+    em_atendimento(criar_paciente, "Bruno Costa", "Consultório 1", chamado_ha_min=2)
+    chave_antes = cliente.get("/painel/dados").get_json()["atual"]["chave"]
+
+    cliente.post(f"/pacientes/chamar-de-novo/{ana.id}")
+
+    dados = cliente.get("/painel/dados").get_json()
+    assert dados["atual"]["nome"] == "Ana L."          # Ana voltou para o topo
+    assert dados["atual"]["local"] == "Triagem"        # para o mesmo local
+    assert dados["atual"]["de_novo"] is True
+    assert dados["atual"]["chave"] != chave_antes      # o painel vai piscar e tocar
+    assert [c["nome"] for c in dados["anteriores"]] == ["Bruno C."]  # sem repetir a Ana
+
+
+def test_chamar_de_novo_nao_muda_o_tempo_de_espera(cliente, criar_paciente):
+    paciente = em_atendimento(criar_paciente, "Ana", "Triagem", chamado_ha_min=5)
+    primeira_chamada = paciente.chamado_em
+
+    cliente.post(f"/pacientes/chamar-de-novo/{paciente.id}")
+
+    db.session.refresh(paciente)
+    assert paciente.chamado_em == primeira_chamada   # a espera continua a mesma
+    assert paciente.ultima_chamada > primeira_chamada
+    assert paciente.foi_rechamado
+
+
+def test_so_chama_de_novo_quem_esta_em_atendimento(cliente, criar_paciente):
+    paciente = criar_paciente("Ana")  # ainda na fila
+
+    cliente.post(f"/pacientes/chamar-de-novo/{paciente.id}")
+
+    db.session.refresh(paciente)
+    assert paciente.ultima_chamada is None
+    assert paciente.status == "Aguardando"
+
+
+def test_primeira_chamada_nao_conta_como_de_novo(cliente, criar_paciente):
+    criar_paciente("Ana")
+    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
+
+    dados = cliente.get("/painel/dados").get_json()
+
+    assert dados["atual"]["de_novo"] is False
+    assert "Chamando agora" in cliente.get("/painel").get_data(as_text=True)
+
+
+def test_pagina_mostra_quando_foi_chamado_de_novo(cliente, criar_paciente):
+    paciente = em_atendimento(criar_paciente, "Ana", "Triagem", chamado_ha_min=5)
+
+    cliente.post(f"/pacientes/chamar-de-novo/{paciente.id}")
+
+    html = cliente.get("/pacientes").get_data(as_text=True)
+    assert "Chamar de novo" in html
+    assert "chamado de novo às" in html
+    assert "Chamando novamente" in cliente.get("/painel").get_data(as_text=True)

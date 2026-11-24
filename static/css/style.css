@@ -473,3 +473,19 @@ main.largo {
 a:has(> button) {
     text-decoration: none;
 }
+
+/* ===== Chamar de novo ===== */
+
+/* Botão secundário: menos destaque que "Concluir" */
+button.secundario {
+    background: transparent;
+    border: 1px solid #999;
+    color: #333;
+}
+
+.rechamado {
+    display: block;
+    margin-top: 6px;
+    color: #555;
+    font-weight: normal;
+}

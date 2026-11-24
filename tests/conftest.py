@@ -102,6 +102,11 @@ def criar_paciente(app):
         }
         dados.update(campos)
 
+        # Quem já foi chamado tem a última chamada igual à primeira
+        # (a não ser que o teste diga outra coisa) — igual à migration
+        # faz com os pacientes antigos do banco.
+        dados.setdefault("ultima_chamada", dados.get("chamado_em"))
+
         paciente = Paciente(nome=nome, **dados)
         db.session.add(paciente)
         db.session.commit()

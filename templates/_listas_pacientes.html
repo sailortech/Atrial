@@ -49,6 +49,15 @@
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit">Concluir</button>
                     </form>
+                    {# Não apareceu? Mostra de novo no painel e toca o som #}
+                    <form method="POST"
+                          action="{{ url_for('chamar_de_novo', id=paciente.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="secundario">Chamar de novo</button>
+                    </form>
+                    {% if paciente.foi_rechamado %}
+                    <small class="rechamado">chamado de novo às {{ paciente.ultima_chamada|hora }}</small>
+                    {% endif %}
                 </td>
             </tr>
             {% endfor %}
