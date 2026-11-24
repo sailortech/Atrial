@@ -111,7 +111,7 @@ def navegador_logado(app, usuario):
     # escrevemos direto na sessão o que o login_user() escreveria.
     # O formulário de verdade é testado em test_login.py.
     with cliente.session_transaction() as sessao:
-        sessao["_user_id"] = str(usuario.id)
+        sessao["_user_id"] = usuario.get_id()  # "id:versão", como o login_user faz
         sessao["_fresh"] = True
 
     return cliente

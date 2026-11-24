@@ -180,6 +180,22 @@ class Usuario(UserMixin, db.Model):
     # a sua. Assim ninguém além dela conhece a senha definitiva.
     trocar_senha = db.Column(db.Boolean, nullable=False, default=False)
 
+    # "Versão" das sessões deste usuário. O cookie de login guarda
+    # id + versão (veja get_id). Trocar a versão invalida TODOS os
+    # cookies antigos: quem estiver logado em outro computador cai.
+    versao_sessao = db.Column(
+        db.String(32), nullable=False, default=lambda: secrets.token_hex(16)
+    )
+
+    def get_id(self):
+        # O Flask-Login guarda no cookie o que esta função devolver
+        # (o padrão seria só o id). Ex.: "7:3f9a1c..."
+        return f"{self.id}:{self.versao_sessao}"
+
+    def encerrar_sessoes(self):
+        """Derruba todas as sessões abertas deste usuário."""
+        self.versao_sessao = secrets.token_hex(16)
+
     @property
     def is_active(self):
         # O Flask-Login consulta is_active no login_user(): para um
@@ -192,6 +208,9 @@ class Usuario(UserMixin, db.Model):
 
     def definir_senha(self, senha):
         self.senha_hash = generate_password_hash(senha)
+        # Senha nova = sessões antigas não valem mais. Fica AQUI (e não
+        # em cada rota) para nenhum jeito de trocar a senha esquecer disso.
+        self.encerrar_sessoes()
 
     def confere_senha(self, senha):
         return check_password_hash(self.senha_hash, senha)
@@ -370,17 +389,29 @@ login_manager = LoginManager(app)
 
 
 @login_manager.user_loader
-def carregar_usuario(usuario_id):
-    """A sessão (o cookie) guarda só o id do usuário. A cada página,
-    o Flask-Login chama esta função para buscar o usuário completo.
+def carregar_usuario(id_da_sessao):
+    """A sessão (o cookie) guarda "id:versão" (veja Usuario.get_id).
+    A cada página, o Flask-Login chama esta função para buscar o
+    usuário completo. Devolver None = "não está logado".
 
-    Usuário desativado -> None: o Flask-Login trata como "não logado".
-    Assim quem for desativado é posto para fora NA HORA, mesmo que
-    esteja com o sistema aberto (e não só no próximo login).
+    - Versão diferente da do banco: a senha mudou depois deste login
+      (ou o usuário foi desativado), então este cookie não vale mais.
+    - Usuário desativado: é posto para fora NA HORA, mesmo que esteja
+      com o sistema aberto (e não só no próximo login).
     """
+    usuario_id, _, versao = id_da_sessao.partition(":")
+    if not usuario_id.isdigit():
+        return None
+
     usuario = db.session.get(Usuario, int(usuario_id))
     if usuario is None or not usuario.ativo:
         return None
+
+    # compare_digest compara sem "vazar" pelo tempo de resposta quantos
+    # caracteres acertou (hábito bom sempre que se compara um segredo)
+    if not secrets.compare_digest(versao, usuario.versao_sessao):
+        return None
+
     return usuario
 
 
@@ -1191,6 +1222,10 @@ def alterar_usuario(id, acao):
     if acao == "ativo":
         usuario.ativo = not usuario.ativo
         mensagem = "reativado" if usuario.ativo else "desativado"
+        if not usuario.ativo:
+            # Sem isso, o cookie antigo "ressuscitaria" se a pessoa
+            # fosse reativada: ela teria que entrar com a senha de novo.
+            usuario.encerrar_sessoes()
     else:
         usuario.admin = not usuario.admin
         mensagem = f"agora é da {usuario.papel.lower()}"
@@ -1225,9 +1260,14 @@ def minha_senha():
             mostrar_erros(erros)
             return render_template("minha_senha.html")
 
-        current_user.definir_senha(nova)
+        current_user.definir_senha(nova)  # também derruba as outras sessões
         current_user.trocar_senha = False
         db.session.commit()
+
+        # ...inclusive ESTA. Então logamos de novo aqui, gravando no
+        # cookie a versão nova: a pessoa continua dentro, e só os outros
+        # computadores (talvez de quem descobriu a senha antiga) caem.
+        login_user(current_user._get_current_object())
 
         flash("Senha alterada.", "sucesso")
         return redirect(url_for("pacientes"))
