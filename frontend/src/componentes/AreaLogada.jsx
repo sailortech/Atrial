@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 import { useSessao } from '../sessao.jsx'
 import Cabecalho from './Cabecalho.jsx'
 import Login from './Login.jsx'
+import MinhaSenha from '../paginas/MinhaSenha.jsx'
 
 /**
  * "Portaria" das telas da recepção: é a mesma ideia do before_request
@@ -13,7 +14,7 @@ import Login from './Login.jsx'
  * sozinho não protegeria nada, igual ao menu do Flask.)
  */
 export default function AreaLogada() {
-  const { usuario } = useSessao()
+  const { usuario, sair } = useSessao()
 
   if (usuario === undefined) {
     return <p className="carregando">Carregando...</p>
@@ -23,15 +24,16 @@ export default function AreaLogada() {
     return <Login />
   }
 
+  // Senha provisória: qualquer endereço mostra só a troca de senha
+  // (o Flask também recusa o resto da API com 403 até ela ser trocada)
   if (usuario.trocar_senha) {
     return (
-      <div className="pagina estreita">
-        <h2>Crie uma senha sua</h2>
-        <p>
-          Você entrou com uma senha provisória. Troque-a na página
-          <strong> Minha senha</strong> do sistema (versão Flask) e depois volte aqui.
+      <main className="pagina estreita">
+        <MinhaSenha />
+        <p className="dica">
+          Não é você? <button type="button" className="link" onClick={sair}>Sair</button>
         </p>
-      </div>
+      </main>
     )
   }
 

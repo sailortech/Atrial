@@ -524,3 +524,25 @@ button.perigo:hover:not(:disabled) {
   cursor: pointer;
   color: var(--texto-suave);
 }
+
+/* ----- Minha senha ----- */
+
+.formulario-estreito {
+  max-width: 420px;
+}
+
+.formulario label small {
+  font-weight: normal;
+  color: var(--texto-suave);
+}
+
+/* O nome no cabeçalho é um link discreto (leva para "Minha senha") */
+.usuario a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.usuario a:hover,
+.usuario a.active {
+  text-decoration: underline;
+}

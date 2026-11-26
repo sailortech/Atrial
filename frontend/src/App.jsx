@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import AreaLogada from './componentes/AreaLogada.jsx'
 import Painel from './componentes/Painel.jsx'
 import EditarPaciente from './paginas/EditarPaciente.jsx'
+import MinhaSenha from './paginas/MinhaSenha.jsx'
 import NovoPaciente from './paginas/NovoPaciente.jsx'
 import Pacientes from './paginas/Pacientes.jsx'
 import Relatorio from './paginas/Relatorio.jsx'
@@ -29,6 +30,7 @@ export default function App() {
             {/* :id = pedaço variável (o EditarPaciente lê com useParams) */}
             <Route path="/pacientes/:id/editar" element={<EditarPaciente />} />
             <Route path="/relatorio" element={<Relatorio />} />
+            <Route path="/minha-senha" element={<MinhaSenha />} />
           </Route>
 
           {/* Qualquer outro endereço vai para a lista de pacientes */}

@@ -141,3 +141,56 @@ def test_lista_de_usuarios_mostra_senha_provisoria(cliente_admin, com_senha_prov
 
     assert "senha provisória" in html
     assert "Redefinir senha" in html
+
+
+# ---------- API (React) ----------
+
+def trocar_pela_api(cliente, atual=SENHA_TESTE, nova=NOVA, confirmacao=None):
+    return cliente.post("/api/minha-senha", json={
+        "atual": atual,
+        "nova": nova,
+        "confirmacao": nova if confirmacao is None else confirmacao,
+    })
+
+
+def test_trocar_senha_pela_api(app, cliente, usuario):
+    intruso = navegador_logado(app, usuario)  # "outro computador"
+
+    resposta = trocar_pela_api(cliente)
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()["usuario"]["trocar_senha"] is False
+    assert usuario.confere_senha(NOVA)
+    # Este navegador continua dentro; o outro cai
+    assert cliente.get("/api/pacientes").status_code == 200
+    assert intruso.get("/api/pacientes").status_code == 401
+
+
+@pytest.mark.parametrize("dados, campos", [
+    ({"atual": "errada"}, {"atual"}),
+    ({"nova": "curta"}, {"nova"}),
+    ({"confirmacao": "diferente-123"}, {"confirmacao"}),
+    ({"nova": SENHA_TESTE}, {"nova"}),                    # igual à atual
+    ({"atual": "errada", "nova": "curta"}, {"atual", "nova"}),
+])
+def test_troca_invalida_pela_api_diz_o_campo(cliente, usuario, dados, campos):
+    resposta = trocar_pela_api(cliente, **dados)
+
+    assert resposta.status_code == 422
+    assert set(resposta.get_json()["erros"]) == campos
+    assert usuario.confere_senha(SENHA_TESTE)  # não mudou
+
+
+def test_senha_provisoria_na_api(cliente, com_senha_provisoria):
+    # Bloqueada para o resto da API...
+    resposta = cliente.get("/api/pacientes")
+    assert resposta.status_code == 403
+    assert resposta.get_json()["trocar_senha"] is True
+
+    # ...mas pode trocar a senha, e aí volta ao normal
+    assert trocar_pela_api(cliente).status_code == 200
+    assert cliente.get("/api/pacientes").status_code == 200
+
+
+def test_trocar_senha_pela_api_exige_login(cliente_anonimo):
+    assert trocar_pela_api(cliente_anonimo).status_code == 401

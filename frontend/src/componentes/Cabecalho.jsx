@@ -22,7 +22,8 @@ export default function Cabecalho() {
       </nav>
 
       <div className="usuario">
-        <span>{usuario.nome}</span>
+        {/* Clicar no próprio nome leva para "Minha senha" (igual ao Flask) */}
+        <NavLink to="/minha-senha" title="Trocar minha senha">{usuario.nome}</NavLink>
         <button type="button" onClick={sair}>Sair</button>
       </div>
     </header>

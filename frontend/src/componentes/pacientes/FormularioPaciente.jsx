@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { api } from '../../api.js'
+import { marcarErro } from '../../formularios.js'
+import ErroDoCampo from '../ErroDoCampo.jsx'
 
 /**
  * Põe os pontos e o traço enquanto a pessoa digita:
@@ -13,12 +15,6 @@ function mascaraCpf(texto) {
     .replace(/^(\d{3})(\d)/, '$1.$2')
     .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
     .replace(/\.(\d{3})(\d)/, '.$1-$2')
-}
-
-// Mensagem de erro embaixo de um campo (some quando não há erro)
-function ErroDoCampo({ campo, erros }) {
-  if (!erros[campo]) return null
-  return <span id={`erro-${campo}`} className="erro-campo">{erros[campo]}</span>
 }
 
 /**
@@ -88,8 +84,7 @@ export default function FormularioPaciente({ inicial, aoSalvar, textoDoBotao }) 
       name: nome,
       value: campos[nome],
       onChange: aoMudar,
-      'aria-invalid': erros[nome] ? true : undefined,
-      'aria-describedby': erros[nome] ? `erro-${nome}` : undefined,
+      ...marcarErro(nome, erros),
     }
   }
 

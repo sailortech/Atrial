@@ -39,13 +39,21 @@ export function SessaoProvider({ children }) {
     setUsuario(dados.usuario)
   }, [])
 
+  // Devolve a mensagem do servidor. O usuário volta atualizado
+  // (trocar_senha: false), e a AreaLogada libera as outras telas.
+  const trocarSenha = useCallback(async (campos) => {
+    const dados = await api.post('/api/minha-senha', campos)
+    setUsuario(dados.usuario)
+    return dados.mensagem
+  }, [])
+
   const sair = useCallback(async () => {
     await api.post('/api/logout')
     setUsuario(null)
   }, [])
 
   return (
-    <SessaoContext.Provider value={{ usuario, entrar, sair, atualizar }}>
+    <SessaoContext.Provider value={{ usuario, entrar, sair, atualizar, trocarSenha }}>
       {children}
     </SessaoContext.Provider>
   )

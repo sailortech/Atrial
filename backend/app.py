@@ -567,7 +567,9 @@ PAGINAS_PUBLICAS = {
 }
 
 # O que quem está com senha provisória ainda pode usar
-LIBERADAS_COM_SENHA_PROVISORIA = {"minha_senha", "logout", "api_sessao", "api_logout"}
+LIBERADAS_COM_SENHA_PROVISORIA = {
+    "minha_senha", "logout", "api_sessao", "api_logout", "api_minha_senha",
+}
 
 
 def e_pedido_da_api():
@@ -1392,36 +1394,50 @@ def alterar_usuario(id, acao):
 
 # ---------- Senhas ----------
 
+def erros_da_troca_de_senha(atual, nova, confirmacao):
+    """Confere a troca da PRÓPRIA senha. Devolve erros por campo
+    (dicionário campo -> mensagem, como em ler_formulario); vazio = ok.
+    Usada pela página Flask e pela API."""
+    erros = {}
+    # Pedir a senha atual protege quem deixou o computador logado:
+    # quem sentar ali não consegue trocar a senha e "roubar" a conta.
+    if not current_user.confere_senha(atual):
+        erros["atual"] = "A senha atual está incorreta."
+    for erro in validar_senha(nova):
+        erros["nova"] = erro
+    if nova != confirmacao:
+        erros["confirmacao"] = "A confirmação não é igual à nova senha."
+    if not erros and nova == atual:
+        erros["nova"] = "A nova senha precisa ser diferente da atual."
+    return erros
+
+
+def acao_trocar_minha_senha(nova):
+    current_user.definir_senha(nova)  # também derruba as outras sessões
+    current_user.trocar_senha = False
+    db.session.commit()
+
+    # ...inclusive ESTA. Então logamos de novo aqui, gravando no
+    # cookie a versão nova: a pessoa continua dentro, e só os outros
+    # computadores (talvez de quem descobriu a senha antiga) caem.
+    login_user(current_user._get_current_object())
+
+
 @app.route("/minha-senha", methods=["GET", "POST"])
 def minha_senha():
     """Qualquer pessoa logada troca a PRÓPRIA senha."""
 
     if request.method == "POST":
-        atual = request.form.get("atual", "")
         nova = request.form.get("nova", "")
-        confirmacao = request.form.get("confirmacao", "")
-
-        erros = []
-        # Pedir a senha atual protege quem deixou o computador logado:
-        # quem sentar ali não consegue trocar a senha e "roubar" a conta.
-        if not current_user.confere_senha(atual):
-            erros.append("A senha atual está incorreta.")
-        erros += validar_senha(nova, confirmacao)
-        if not erros and nova == atual:
-            erros.append("A nova senha precisa ser diferente da atual.")
+        erros = erros_da_troca_de_senha(
+            request.form.get("atual", ""), nova, request.form.get("confirmacao", "")
+        )
 
         if erros:
-            mostrar_erros(erros)
+            mostrar_erros(erros.values())
             return render_template("minha_senha.html")
 
-        current_user.definir_senha(nova)  # também derruba as outras sessões
-        current_user.trocar_senha = False
-        db.session.commit()
-
-        # ...inclusive ESTA. Então logamos de novo aqui, gravando no
-        # cookie a versão nova: a pessoa continua dentro, e só os outros
-        # computadores (talvez de quem descobriu a senha antiga) caem.
-        login_user(current_user._get_current_object())
+        acao_trocar_minha_senha(nova)
 
         flash("Senha alterada.", "sucesso")
         return redirect(url_for("pacientes"))
@@ -1710,6 +1726,23 @@ def api_relatorio():
             for linha in dados["por_local"]
         ],
     )
+
+
+# ---------- API: minha senha ----------
+
+@app.post("/api/minha-senha")
+def api_minha_senha():
+    dados = request.get_json(silent=True) or {}
+    atual, nova, confirmacao = (
+        str(dados.get(campo) or "") for campo in ("atual", "nova", "confirmacao")
+    )
+
+    erros = erros_da_troca_de_senha(atual, nova, confirmacao)
+    if erros:
+        return erros_de_validacao(erros)
+
+    acao_trocar_minha_senha(nova)
+    return jsonify(mensagem="Senha alterada.", usuario=usuario_json(current_user))
 
 
 if __name__ == "__main__":
