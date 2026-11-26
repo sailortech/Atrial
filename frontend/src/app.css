@@ -413,3 +413,114 @@ button.perigo:hover:not(:disabled) {
   background: var(--erro-texto);
   color: #fff;
 }
+
+/* ----- Relatório ----- */
+
+:root {
+  --serie-1: #2a78d6; /* azul da série (validado contra o fundo claro) */
+  --grade: #e6e5e2;
+}
+
+.relatorio-dia {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+/* Trocando de dia: os números velhos ficam apagados até chegar o novo */
+.desatualizado {
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+/* Números de destaque */
+.indicadores {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.indicador {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--linha);
+  border-radius: 6px;
+}
+
+.indicador-rotulo,
+.indicador-extra {
+  color: var(--texto-suave);
+  font-size: 0.9rem;
+}
+
+.indicador-valor {
+  font-size: 2rem;
+  font-weight: bold;
+}
+
+/* Gráfico */
+.grafico-area {
+  position: relative; /* referência para posicionar a dica */
+}
+
+.grafico svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.grafico .grade {
+  stroke: var(--grade);
+}
+
+.grafico .chao {
+  stroke: #bbb;
+}
+
+.grafico .eixo {
+  fill: var(--texto-suave);
+  font-size: 12px;
+}
+
+.grafico .barra {
+  fill: var(--serie-1);
+}
+
+.grafico .alvo {
+  fill: transparent;
+}
+
+.grafico .coluna {
+  outline: none;
+}
+
+/* Coluna em foco/hover: um fundo leve marca qual está sendo lida */
+.grafico .coluna:hover .alvo,
+.grafico .coluna:focus-visible .alvo {
+  fill: rgba(0, 0, 0, 0.04);
+}
+
+.grafico-dica {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px)); /* centrada, em cima da barra */
+  padding: 6px 10px;
+  background: #222;
+  color: #fff;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none; /* não "rouba" o mouse da coluna */
+}
+
+.grafico details {
+  margin-top: 12px;
+}
+
+.grafico summary {
+  cursor: pointer;
+  color: var(--texto-suave);
+}

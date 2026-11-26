@@ -5,6 +5,7 @@ import Painel from './componentes/Painel.jsx'
 import EditarPaciente from './paginas/EditarPaciente.jsx'
 import NovoPaciente from './paginas/NovoPaciente.jsx'
 import Pacientes from './paginas/Pacientes.jsx'
+import Relatorio from './paginas/Relatorio.jsx'
 import { SessaoProvider } from './sessao.jsx'
 
 /**
@@ -27,6 +28,7 @@ export default function App() {
             <Route path="/pacientes/novo" element={<NovoPaciente />} />
             {/* :id = pedaço variável (o EditarPaciente lê com useParams) */}
             <Route path="/pacientes/:id/editar" element={<EditarPaciente />} />
+            <Route path="/relatorio" element={<Relatorio />} />
           </Route>
 
           {/* Qualquer outro endereço vai para a lista de pacientes */}

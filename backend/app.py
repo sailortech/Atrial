@@ -970,6 +970,12 @@ def locais_do_relatorio(concluidos):
     return sorted(nomes)
 
 
+def horas_do_grafico(por_hora):
+    """As horas do eixo: pelo menos o horário comercial (7h às 18h),
+    e mais se houve movimento fora dele. Usada pelo Flask e pela API."""
+    return list(range(min(7, *por_hora), max(18, *por_hora) + 1))
+
+
 def grafico_por_hora(por_hora):
     """Calcula o desenho (em SVG) do gráfico de chegadas por hora.
 
@@ -979,8 +985,7 @@ def grafico_por_hora(por_hora):
     if not por_hora:
         return None
 
-    # Pelo menos o horário comercial, e mais se houve movimento fora dele
-    horas = list(range(min(7, *por_hora), max(18, *por_hora) + 1))
+    horas = horas_do_grafico(por_hora)
 
     largura, altura = 720, 240
     esquerda, direita, topo, base = 36, 8, 12, 28
@@ -1043,14 +1048,17 @@ def caminho_barra(x, y_topo, largura, y_chao):
     )
 
 
+def dia_do_pedido():
+    """?dia=2026-11-18 escolhe o dia; sem nada (ou inválido), é hoje."""
+    try:
+        return date.fromisoformat(request.args.get("dia", ""))
+    except ValueError:
+        return date.today()
+
+
 @app.route("/relatorio")
 def relatorio():
-    # ?dia=2026-11-18 escolhe o dia; sem nada, é hoje
-    try:
-        dia = date.fromisoformat(request.args.get("dia", ""))
-    except ValueError:
-        dia = date.today()
-
+    dia = dia_do_pedido()
     dados = relatorio_do_dia(dia)
 
     return render_template(
@@ -1662,6 +1670,46 @@ def api_excluir_paciente(id):
     if paciente is None:
         return jsonify(erro="Paciente não encontrado."), 404
     return jsonify(mensagem=acao_excluir_paciente(paciente))
+
+
+# ---------- API: relatório ----------
+
+@app.get("/api/relatorio")
+def api_relatorio():
+    """Os números do dia. Diferente da página Flask, o desenho do
+    gráfico NÃO vem pronto: vão só os dados (hora, total) e o React
+    calcula as barras. Os tempos vão formatados ("12 min"), como em
+    paciente_json, para ficarem iguais nas duas versões."""
+    dia = dia_do_pedido()
+    dados = relatorio_do_dia(dia)
+    por_hora = dados["por_hora"]
+
+    return jsonify(
+        dia=dia.isoformat(),
+        hoje=date.today().isoformat(),
+        anterior=(dia - timedelta(days=1)).isoformat(),
+        seguinte=(dia + timedelta(days=1)).isoformat(),
+        chegaram=dados["chegaram"],
+        atendidos=dados["atendidos"],
+        nao_compareceram=dados["nao_compareceram"],
+        espera_media=formatar_minutos(dados["espera_media"]),
+        maior_espera=formatar_minutos(dados["maior_espera"]),
+        duracao_media=formatar_minutos(dados["duracao_media"]),
+        # Todas as horas do eixo, inclusive as com zero (o React não
+        # precisa saber a regra do horário comercial)
+        por_hora=[
+            {"hora": hora, "total": por_hora.get(hora, 0)}
+            for hora in (horas_do_grafico(por_hora) if por_hora else [])
+        ],
+        por_prioridade=[
+            {**linha, "espera_media": formatar_minutos(linha["espera_media"])}
+            for linha in dados["por_prioridade"]
+        ],
+        por_local=[
+            {**linha, "duracao_media": formatar_minutos(linha["duracao_media"])}
+            for linha in dados["por_local"]
+        ],
+    )
 
 
 if __name__ == "__main__":

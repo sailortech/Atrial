@@ -16,6 +16,7 @@ export default function Cabecalho() {
         {/* end: só fica "ativo" em /pacientes exato, não em /pacientes/novo */}
         <NavLink to="/pacientes" end>Pacientes</NavLink>
         <NavLink to="/pacientes/novo">Cadastrar</NavLink>
+        <NavLink to="/relatorio">Relatório</NavLink>
         {/* target="_blank": abre a TV em outra aba */}
         <a href="/painel" target="_blank" rel="noreferrer">Painel da TV</a>
       </nav>

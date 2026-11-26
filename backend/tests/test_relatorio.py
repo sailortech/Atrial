@@ -185,3 +185,42 @@ def test_quem_nao_compareceu_nao_conta_como_atendido(criar_paciente):
     assert triagem["atendidos"] == 1
     # Mas a espera do Bruno (até ser chamado) conta: a clínica o fez esperar
     assert dados["espera_media"] == pytest.approx((10 + 40) / 2)
+
+
+# ---------- API (React) ----------
+
+def test_api_do_relatorio(cliente, dia_movimentado):
+    dados = cliente.get("/api/relatorio?dia=2026-11-18").get_json()
+
+    assert dados["dia"] == "2026-11-18"
+    assert dados["anterior"] == "2026-11-17"
+    assert dados["seguinte"] == "2026-11-19"
+    assert dados["chegaram"] == 4
+    assert dados["atendidos"] == 2
+    assert dados["espera_media"] == "20 min"   # já formatado
+    assert dados["maior_espera"] == "35 min"
+
+    # Todas as horas do eixo (7h às 18h), inclusive as sem ninguém
+    horas = {linha["hora"]: linha["total"] for linha in dados["por_hora"]}
+    assert list(horas) == list(range(7, 19))
+    assert horas[8] == 2 and horas[9] == 1 and horas[14] == 1
+    assert horas[10] == 0
+
+    urgente = next(l for l in dados["por_prioridade"] if l["prioridade"] == "Urgente")
+    assert urgente["espera_media"] == "5 min"
+
+
+def test_api_do_relatorio_dia_vazio(cliente):
+    dados = cliente.get("/api/relatorio?dia=2020-01-01").get_json()
+
+    assert dados["por_hora"] == []           # o React mostra "nenhuma chegada"
+    assert dados["espera_media"] == "-"
+
+
+def test_api_do_relatorio_dia_invalido_e_hoje(cliente):
+    dados = cliente.get("/api/relatorio?dia=banana").get_json()
+    assert dados["dia"] == dados["hoje"] == date.today().isoformat()
+
+
+def test_api_do_relatorio_exige_login(cliente_anonimo):
+    assert cliente_anonimo.get("/api/relatorio").status_code == 401
