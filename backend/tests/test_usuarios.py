@@ -3,7 +3,7 @@
 import pytest
 
 from app import Local, Usuario, app as flask_app, db
-from conftest import SENHA_TESTE
+from conftest import SENHA_TESTE, navegador_logado
 
 # Rotas que SÓ a administração pode usar: (método, endereço)
 ROTAS_DE_ADMIN = [
@@ -23,6 +23,10 @@ ROTAS_DE_ADMIN_API = [
     ("get", "/api/locais"),
     ("post", "/api/locais"),
     ("post", "/api/locais/1/alternar"),
+    ("get", "/api/usuarios"),
+    ("post", "/api/usuarios"),
+    ("post", "/api/usuarios/1/ativo"),
+    ("post", "/api/usuarios/1/senha"),
 ]
 
 
@@ -42,11 +46,12 @@ def test_recepcao_nao_entra_nas_paginas_de_admin(cliente, metodo, endereco):
 
 @pytest.mark.parametrize("metodo, endereco", ROTAS_DE_ADMIN_API)
 def test_recepcao_nao_usa_a_api_de_admin(cliente, metodo, endereco):
-    resposta = getattr(cliente, metodo)(endereco, json={"nome": "Invasor"})
+    resposta = getattr(cliente, metodo)(endereco, json={"nome": "Invasor", "login": "invasor", "senha": "12345678", "admin": True})
 
     assert resposta.status_code == 403
     assert "administração" in resposta.get_json()["erro"]
     assert Local.query.filter_by(nome="Invasor").first() is None
+    assert Usuario.query.filter_by(login="invasor").first() is None
 
 
 def test_recepcao_nao_consegue_mudar_nada(cliente, admin):
@@ -216,3 +221,84 @@ def test_comando_cria_admin(app):
 
     assert "administração" in resultado.output
     assert usuario("chefe").admin
+
+
+# ---------- API (React) ----------
+
+def test_api_lista_usuarios(cliente_admin, admin, usuario):
+    lista = cliente_admin.get("/api/usuarios").get_json()["usuarios"]
+
+    por_login = {u["login"]: u for u in lista}
+    assert por_login[admin.login]["voce"] is True
+    assert por_login["ana"]["voce"] is False
+    assert por_login["ana"]["papel"] == "Recepção"
+    assert all("senha_hash" not in u for u in lista)  # nada de senha na resposta
+
+
+def test_api_cria_usuario(cliente_admin):
+    resposta = cliente_admin.post("/api/usuarios", json={
+        "nome": " Carla Dias ", "login": "Carla.Dias", "senha": "senha-boa-123", "admin": True,
+    })
+
+    assert resposta.status_code == 201
+    carla = usuario("carla.dias")
+    assert carla.nome == "Carla Dias" and carla.admin
+    assert carla.trocar_senha  # senha escolhida pela admin = provisória
+
+
+def test_api_admin_so_com_true_de_verdade(cliente_admin):
+    cliente_admin.post("/api/usuarios", json={
+        "nome": "Davi", "login": "davi", "senha": "senha-boa-123", "admin": "sim",
+    })
+    assert not usuario("davi").admin
+
+
+def test_api_cria_usuario_com_erros_por_campo(cliente_admin, usuario):
+    resposta = cliente_admin.post("/api/usuarios", json={
+        "nome": "", "login": "ana", "senha": "curta",
+    })
+
+    assert resposta.status_code == 422
+    erros = resposta.get_json()["erros"]
+    assert set(erros) == {"nome", "login", "senha"}
+    assert "Já existe" in erros["login"]
+
+
+def test_api_alterna_papel_e_situacao(cliente_admin, usuario):
+    resposta = cliente_admin.post(f"/api/usuarios/{usuario.id}/admin")
+    assert resposta.get_json()["mensagem"] == "Usuário 'ana' agora é da administração."
+    assert usuario.admin
+
+    cliente_admin.post(f"/api/usuarios/{usuario.id}/ativo")
+    assert not usuario.ativo
+
+
+def test_api_nao_mexe_no_proprio_acesso(cliente_admin, admin):
+    for acao in ("ativo", "admin", "senha"):
+        resposta = cliente_admin.post(f"/api/usuarios/{admin.id}/{acao}", json={"nova": "x" * 8})
+        assert resposta.status_code == 409
+    assert admin.admin and admin.ativo
+
+
+def test_api_redefine_senha(app, cliente_admin, usuario):
+    computador_da_ana = navegador_logado(app, usuario)
+
+    resposta = cliente_admin.post(f"/api/usuarios/{usuario.id}/senha", json={"nova": "provisoria-1"})
+
+    assert resposta.status_code == 200
+    assert usuario.confere_senha("provisoria-1") and usuario.trocar_senha
+    assert computador_da_ana.get("/api/pacientes").status_code == 401  # caiu
+
+
+def test_api_redefine_senha_curta(cliente_admin, usuario):
+    resposta = cliente_admin.post(f"/api/usuarios/{usuario.id}/senha", json={"nova": "curta"})
+
+    assert resposta.status_code == 422
+    assert "nova" in resposta.get_json()["erros"]
+    assert usuario.confere_senha(SENHA_TESTE)
+
+
+@pytest.mark.parametrize("endereco", ["/api/usuarios/999/ativo", "/api/usuarios/999/senha",
+                                      "/api/usuarios/1/apagar"])
+def test_api_usuario_ou_acao_inexistente(cliente_admin, endereco):
+    assert cliente_admin.post(endereco, json={"nova": "x" * 8}).status_code == 404

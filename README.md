@@ -9,7 +9,7 @@ O projeto tem duas partes:
 | Pasta | O que é |
 |---|---|
 | [`backend/`](backend/) | O sistema completo em **Flask**: banco de dados, regras, login e as páginas da recepção (HTML montado no servidor) |
-| [`frontend/`](frontend/) | Telas em **React**, que conversam com o Flask por uma API JSON. Já tem login, lista de pacientes e painel da TV (veja [Frontend em React](#frontend-em-react)) |
+| [`frontend/`](frontend/) | Telas em **React**, que conversam com o Flask por uma API JSON. Tem todas as telas do sistema (veja [Frontend em React](#frontend-em-react)) |
 
 ## O que ele faz
 
@@ -149,9 +149,12 @@ frontend/
     App.jsx               rotas (qual tela aparece em cada endereço)
     api.js                conversa com a API do Flask (CSRF, erros)
     sessao.jsx            quem está logado (Context), para qualquer componente
-    paginas/              telas inteiras (Pacientes)
-    componentes/          pedaços da tela (Login, Cabecalho, Painel, tabelas...)
-    hooks/                lógica reaproveitável (usePacientes, usePainel, useSom)
+    formularios.js        ajudantes dos formulários (marcar campo com erro)
+    paginas/              telas inteiras (Pacientes, Relatorio, Locais, Usuarios...)
+    componentes/          pedaços da tela (Login, Cabecalho, Painel, Mensagem...)
+      AreaLogada.jsx, SoAdmin.jsx   "portarias": exigem login / administração
+      pacientes/, relatorio/, usuarios/   pedaços de cada tela
+    hooks/                lógica reaproveitável (usePacientes, useRelatorio, usePainel, useSom)
     app.css               visual das telas da recepção
     painel.css            visual do painel da TV
 ```
@@ -170,14 +173,18 @@ Dentro do `app.py`, as partes estão separadas por comentários (`# ---------- L
 
 ## Frontend em React
 
-A pasta `frontend/` tem a versão em **React** de parte do sistema. As telas vão sendo levadas aos poucos para o React, e enquanto isso as páginas do Flask continuam funcionando normalmente.
+A pasta `frontend/` tem a versão em **React** de todas as telas do sistema. As páginas do Flask continuam funcionando normalmente: as duas versões usam o mesmo banco e as mesmas regras.
 
 | Endereço (no React) | Tela |
 |---|---|
 | `/pacientes` | Login + lista de pacientes: chamar, concluir, chamar de novo, não compareceu, busca |
+| `/pacientes/novo` | Cadastro de paciente |
+| `/pacientes/:id/editar` | Edição de paciente (e, numa área separada, excluir) |
+| `/relatorio?dia=AAAA-MM-DD` | Relatório do dia, com o gráfico de chegadas por hora |
+| `/minha-senha` | Trocar a própria senha (com senha provisória, é a única tela liberada) |
+| `/locais` | Locais de atendimento (só administração) |
+| `/usuarios` | Usuários: criar, mudar papel, desativar, redefinir senha (só administração) |
 | `/painel` | Painel da TV (sem login) |
-
-Ainda só no Flask: cadastro e edição de pacientes, relatório, locais, usuários e senhas.
 
 Requisito: **Node.js** (testado com o 24), que já traz o `npm`.
 
@@ -197,8 +204,11 @@ Abra **http://localhost:5173**. O código fica em `frontend/src/`, e o navegador
 A API fica no fim do `backend/app.py` (seção "API JSON"), e as rotas dela usam **as mesmas funções** das páginas HTML (`autenticar`, `acao_chamar_proximo`, ...): as regras ficam num lugar só. Ela segue estas convenções:
 
 - **Login:** `GET /api/sessao` diz quem está logado e entrega o código CSRF; `POST /api/login` e `POST /api/logout` entram e saem.
-- **CSRF:** todo `POST` manda o código no cabeçalho `X-CSRFToken`. O [`src/api.js`](frontend/src/api.js) faz isso sozinho.
-- **Erros:** um código HTTP e `{"erro": "mensagem"}`. `401` = não está logado, `403` = sem permissão (ou senha provisória), `409` = não deu por causa da situação atual (fila vazia, paciente que já saiu do atendimento). Se o Flask estiver em outro endereço, defina `ATRIAL_BACKEND` antes do `npm run dev`, por exemplo `$env:ATRIAL_BACKEND="http://127.0.0.1:5051"`.
+- **Métodos:** `GET` lê, `POST` cria ou executa uma ação, `PUT` salva a edição e `DELETE` apaga (ex.: `GET`, `PUT` e `DELETE` em `/api/pacientes/7`).
+- **CSRF:** todo pedido que muda algo (`POST`, `PUT`, `DELETE`) manda o código no cabeçalho `X-CSRFToken`. O [`src/api.js`](frontend/src/api.js) faz isso sozinho.
+- **Erros:** um código HTTP e `{"erro": "mensagem"}`. `401` = não está logado, `403` = sem permissão (ou senha provisória), `404` = não encontrado, `409` = não deu por causa da situação atual (fila vazia, último local ativo, o próprio acesso), `422` = dados inválidos, com `{"erros": {"campo": "mensagem"}}` para o React mostrar cada erro embaixo do seu campo.
+
+Se o Flask estiver em outro endereço, defina `ATRIAL_BACKEND` antes do `npm run dev`, por exemplo `$env:ATRIAL_BACKEND="http://127.0.0.1:5051"`.
 
 Outros comandos, sempre rodados de dentro de `frontend/`:
 

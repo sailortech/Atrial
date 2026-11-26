@@ -531,21 +531,23 @@ def admin_obrigatorio(rota):
 
 
 def validar_novo_usuario(login, nome, senha):
-    """Regras para criar usuário (usadas pela página e pelo comando).
-    Devolve a lista de erros; vazia = tudo certo."""
-    erros = []
+    """Regras para criar usuário (usadas pela página, pela API e pelo
+    comando). Devolve erros por campo (campo -> mensagem); vazio = ok."""
+    erros = {}
 
     if not nome:
-        erros.append("Informe o nome.")
+        erros["nome"] = "Informe o nome."
     if not re.fullmatch(r"[a-z0-9._-]{3,50}", login):
-        erros.append(
+        erros["login"] = (
             "O usuário deve ter de 3 a 50 caracteres: letras sem acento, "
             "números, ponto, hífen ou sublinhado."
         )
     elif Usuario.query.filter_by(login=login).first():
-        erros.append(f"Já existe o usuário '{login}'.")
+        erros["login"] = f"Já existe o usuário '{login}'."
+    for erro in validar_senha(senha):
+        erros["senha"] = erro
 
-    return erros + validar_senha(senha)
+    return erros
 
 
 def validar_senha(senha, confirmacao=None):
@@ -736,7 +738,7 @@ def criar_usuario(login, nome, senha, admin):
 
     erros = validar_novo_usuario(login, nome, senha)
     if erros:
-        raise click.ClickException(" ".join(erros))
+        raise click.ClickException(" ".join(erros.values()))
 
     usuario = Usuario(nome=nome, login=login, admin=admin)
     usuario.definir_senha(senha)
@@ -1349,27 +1351,30 @@ def usuarios():
         erros = validar_novo_usuario(login, nome, senha)
 
         if erros:
-            mostrar_erros(erros)
+            mostrar_erros(erros.values())
             # Devolve o que foi digitado (MENOS a senha, por segurança)
             return render_template(
                 "usuarios.html", usuarios=lista_de_usuarios(),
                 dados={"login": login, "nome": nome, "admin": admin},
             )
 
-        # trocar_senha=True: a senha inicial foi escolhida pela administração
-        usuario = Usuario(nome=nome, login=login, admin=admin, trocar_senha=True)
-        usuario.definir_senha(senha)
-        db.session.add(usuario)
-        db.session.commit()
-
-        flash(
-            f"Usuário '{login}' criado ({usuario.papel}). "
-            "No primeiro acesso, a pessoa vai criar a própria senha.",
-            "sucesso"
-        )
+        flash(acao_criar_usuario(nome, login, senha, admin), "sucesso")
         return redirect(url_for("usuarios"))
 
     return render_template("usuarios.html", usuarios=lista_de_usuarios(), dados={})
+
+
+def acao_criar_usuario(nome, login, senha, admin):
+    """Cria o usuário (já validado). Devolve a mensagem de confirmação."""
+    # trocar_senha=True: a senha inicial foi escolhida pela administração
+    usuario = Usuario(nome=nome, login=login, admin=admin, trocar_senha=True)
+    usuario.definir_senha(senha)
+    db.session.add(usuario)
+    db.session.commit()
+    return (
+        f"Usuário '{login}' criado ({usuario.papel}). "
+        "No primeiro acesso, a pessoa vai criar a própria senha."
+    )
 
 
 def lista_de_usuarios():
@@ -1386,6 +1391,15 @@ def alterar_usuario(id, acao):
     if acao not in ("ativo", "admin"):
         abort(404)
 
+    deu_certo, mensagem = acao_alterar_usuario(usuario, acao)
+    flash(mensagem, "sucesso" if deu_certo else "erro")
+    return redirect(url_for("usuarios"))
+
+
+def acao_alterar_usuario(usuario, acao):
+    """acao 'ativo' (desativa/reativa) ou 'admin' (troca o papel).
+    Devolve (deu_certo, mensagem)."""
+
     # Ninguém mexe no PRÓPRIO acesso: evita alguém se trancar fora
     # sem querer (ex.: o único admin tirando o próprio papel).
     #
@@ -1393,8 +1407,7 @@ def alterar_usuario(id, acao):
     # quem está aqui é um admin ativo (o decorador garante), e ele só
     # pode mexer nos OUTROS. Então sempre sobra pelo menos ele mesmo.
     if usuario.id == current_user.id:
-        flash("Você não pode alterar o seu próprio acesso.", "erro")
-        return redirect(url_for("usuarios"))
+        return False, "Você não pode alterar o seu próprio acesso."
 
     if acao == "ativo":
         usuario.ativo = not usuario.ativo
@@ -1408,9 +1421,7 @@ def alterar_usuario(id, acao):
         mensagem = f"agora é da {usuario.papel.lower()}"
 
     db.session.commit()
-    flash(f"Usuário '{usuario.login}' {mensagem}.", "sucesso")
-
-    return redirect(url_for("usuarios"))
+    return True, f"Usuário '{usuario.login}' {mensagem}."
 
 
 # ---------- Senhas ----------
@@ -1466,6 +1477,17 @@ def minha_senha():
     return render_template("minha_senha.html")
 
 
+def acao_redefinir_senha(usuario, nova):
+    """Senha PROVISÓRIA (já validada) para quem esqueceu a sua."""
+    usuario.definir_senha(nova)  # também derruba as sessões dela
+    usuario.trocar_senha = True  # no próximo acesso, cria a própria
+    db.session.commit()
+    return (
+        f"Senha provisória definida para '{usuario.login}'. "
+        "No próximo acesso, a pessoa vai criar a própria senha."
+    )
+
+
 @app.route("/usuarios/<int:id>/senha", methods=["GET", "POST"])
 @admin_obrigatorio
 def redefinir_senha(id):
@@ -1484,15 +1506,7 @@ def redefinir_senha(id):
             mostrar_erros(erros)
             return render_template("redefinir_senha.html", usuario=usuario)
 
-        usuario.definir_senha(nova)
-        usuario.trocar_senha = True  # no próximo acesso, cria a própria
-        db.session.commit()
-
-        flash(
-            f"Senha provisória definida para '{usuario.login}'. "
-            "No próximo acesso, a pessoa vai criar a própria senha.",
-            "sucesso"
-        )
+        flash(acao_redefinir_senha(usuario, nova), "sucesso")
         return redirect(url_for("usuarios"))
 
     return render_template("redefinir_senha.html", usuario=usuario)
@@ -1795,6 +1809,70 @@ def api_alternar_local(id):
     if local is None:
         return jsonify(erro="Local não encontrado."), 404
     return resposta_da_acao(acao_alternar_local(local))
+
+
+# ---------- API: usuários (só administração) ----------
+
+def usuario_da_lista_json(usuario):
+    return {
+        **usuario_json(usuario),
+        "id": usuario.id,
+        "ativo": usuario.ativo,
+        "papel": usuario.papel,
+        # Para o React esconder os botões da própria linha
+        "voce": usuario.id == current_user.id,
+    }
+
+
+@app.get("/api/usuarios")
+@admin_obrigatorio
+def api_usuarios():
+    return jsonify(usuarios=[usuario_da_lista_json(u) for u in lista_de_usuarios()])
+
+
+@app.post("/api/usuarios")
+@admin_obrigatorio
+def api_criar_usuario():
+    dados = request.get_json(silent=True) or {}
+    login = str(dados.get("login") or "").strip().lower()
+    nome = str(dados.get("nome") or "").strip()
+    senha = str(dados.get("senha") or "")
+    admin = dados.get("admin") is True  # só o true de verdade vale
+
+    erros = validar_novo_usuario(login, nome, senha)
+    if erros:
+        return erros_de_validacao(erros)
+
+    return jsonify(mensagem=acao_criar_usuario(nome, login, senha, admin)), 201
+
+
+@app.post("/api/usuarios/<int:id>/senha")
+@admin_obrigatorio
+def api_redefinir_senha(id):
+    usuario = db.session.get(Usuario, id)
+    if usuario is None:
+        return jsonify(erro="Usuário não encontrado."), 404
+    if usuario.id == current_user.id:
+        # Para a própria senha existe "Minha senha" (que pede a atual)
+        return jsonify(erro="Para a sua senha, use Minha senha."), 409
+
+    nova = str((request.get_json(silent=True) or {}).get("nova") or "")
+    erros = validar_senha(nova)
+    if erros:
+        return erros_de_validacao({"nova": erros[0]})
+
+    return jsonify(mensagem=acao_redefinir_senha(usuario, nova))
+
+
+@app.post("/api/usuarios/<int:id>/<acao>")
+@admin_obrigatorio
+def api_alterar_usuario(id, acao):
+    if acao not in ("ativo", "admin"):
+        return jsonify(erro="Ação desconhecida."), 404
+    usuario = db.session.get(Usuario, id)
+    if usuario is None:
+        return jsonify(erro="Usuário não encontrado."), 404
+    return resposta_da_acao(acao_alterar_usuario(usuario, acao))
 
 
 if __name__ == "__main__":

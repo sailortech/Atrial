@@ -9,6 +9,7 @@ import MinhaSenha from './paginas/MinhaSenha.jsx'
 import NovoPaciente from './paginas/NovoPaciente.jsx'
 import Pacientes from './paginas/Pacientes.jsx'
 import Relatorio from './paginas/Relatorio.jsx'
+import Usuarios from './paginas/Usuarios.jsx'
 import { SessaoProvider } from './sessao.jsx'
 
 /**
@@ -37,6 +38,7 @@ export default function App() {
             {/* Portaria dentro da portaria: além de logado, precisa ser admin */}
             <Route element={<SoAdmin />}>
               <Route path="/locais" element={<Locais />} />
+              <Route path="/usuarios" element={<Usuarios />} />
             </Route>
           </Route>
 

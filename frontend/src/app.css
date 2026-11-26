@@ -573,3 +573,27 @@ table.tabela-estreita {
 tr.inativo td {
   color: #888;
 }
+
+/* ----- Usuários ----- */
+
+/* Caixa de seleção com o texto ao lado (não embaixo) */
+.formulario label.caixa {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+}
+
+small.bloco {
+  display: block;
+  color: var(--texto-suave);
+}
+
+/* Linha do "Redefinir senha", aberta logo abaixo da pessoa */
+tr.linha-extra td {
+  background: var(--fundo-cabecalho);
+}
+
+.redefinir-senha .linha-de-cadastro {
+  margin: 8px 0 0;
+}

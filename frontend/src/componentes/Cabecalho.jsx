@@ -18,7 +18,13 @@ export default function Cabecalho() {
         <NavLink to="/pacientes/novo">Cadastrar</NavLink>
         <NavLink to="/relatorio">Relatório</NavLink>
         {/* && = só aparece para quem é da administração */}
-        {usuario.admin && <NavLink to="/locais">Locais</NavLink>}
+        {usuario.admin && (
+          // <> </> agrupa os dois links sem criar um elemento a mais
+          <>
+            <NavLink to="/locais">Locais</NavLink>
+            <NavLink to="/usuarios">Usuários</NavLink>
+          </>
+        )}
         {/* target="_blank": abre a TV em outra aba */}
         <a href="/painel" target="_blank" rel="noreferrer">Painel da TV</a>
       </nav>
