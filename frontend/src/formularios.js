@@ -13,3 +13,15 @@ export function marcarErro(campo, erros) {
     'aria-describedby': erros[campo] ? `erro-${campo}` : undefined,
   }
 }
+
+/**
+ * Põe os pontos e o traço enquanto a pessoa digita:
+ * "5299822" -> "529.982.2". Só deixa números e no máximo 11.
+ */
+export function mascaraCpf(texto) {
+  const d = texto.replace(/\D/g, '').slice(0, 11)
+  return d
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1-$2')
+}

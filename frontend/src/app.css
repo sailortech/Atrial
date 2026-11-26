@@ -597,3 +597,9 @@ tr.linha-extra td {
 .redefinir-senha .linha-de-cadastro {
   margin: 8px 0 0;
 }
+
+/* ----- Renomear local (na própria linha da tabela) ----- */
+
+form.renomear .linha-de-cadastro {
+  margin: 0;
+}

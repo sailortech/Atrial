@@ -3,17 +3,20 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import ErroDoCampo from '../componentes/ErroDoCampo.jsx'
 import Mensagem from '../componentes/Mensagem.jsx'
+import RenomearLocal from '../componentes/locais/RenomearLocal.jsx'
 import { marcarErro } from '../formularios.js'
 
 /**
- * Locais de atendimento (só administração): adicionar, desativar e
- * reativar. Local desativado sai do "Chamar para...", mas continua no
- * histórico e no relatório (por isso não existe "excluir").
+ * Locais de atendimento (só administração): adicionar, renomear,
+ * desativar e reativar. Local desativado sai do "Chamar para...", mas
+ * continua no histórico e no relatório (por isso não existe "excluir").
  */
 export default function Locais() {
   const [locais, setLocais] = useState(null)
   const [erroAoCarregar, setErroAoCarregar] = useState(null)
   const [mensagem, setMensagem] = useState(null)
+  // Qual local está com o nome em edição (id), ou null
+  const [editando, setEditando] = useState(null)
 
   // Formulário de novo local (um campo só)
   const [novoNome, setNovoNome] = useState('')
@@ -54,6 +57,13 @@ export default function Locais() {
     }
   }
 
+  // O RenomearLocal avisa aqui quando salvou
+  async function renomeado(texto) {
+    setMensagem({ tipo: 'sucesso', texto })
+    setEditando(null)
+    await carregar()
+  }
+
   async function alternar(local) {
     try {
       const resposta = await api.post(`/api/locais/${local.id}/alternar`)
@@ -79,7 +89,8 @@ export default function Locais() {
       <p className="dica">
         Para onde os pacientes podem ser chamados (aparecem em "Chamar para..." e no
         painel da TV). Um local desativado sai da lista de chamada, mas continua no
-        histórico e nos relatórios.
+        histórico e nos relatórios. Ao renomear, quem já foi chamado continua
+        registrado com o nome antigo; o novo nome vale para as próximas chamadas.
       </p>
 
       <Mensagem mensagem={mensagem} aoFechar={() => setMensagem(null)} />
@@ -114,9 +125,25 @@ export default function Locais() {
             const ultimoAtivo = local.ativo && ativos === 1
             return (
               <tr key={local.id} className={local.ativo ? undefined : 'inativo'}>
-                <td>{local.nome}</td>
-                <td>{local.ativo ? 'Ativo' : 'Desativado'}</td>
                 <td>
+                  {/* A mesma célula mostra o nome OU o campo de edição */}
+                  {editando === local.id ? (
+                    <RenomearLocal
+                      local={local}
+                      aoConcluir={renomeado}
+                      aoCancelar={() => setEditando(null)}
+                    />
+                  ) : (
+                    local.nome
+                  )}
+                </td>
+                <td>{local.ativo ? 'Ativo' : 'Desativado'}</td>
+                <td className="acoes">
+                  {editando !== local.id && (
+                    <button type="button" onClick={() => setEditando(local.id)}>
+                      Renomear
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => alternar(local)}

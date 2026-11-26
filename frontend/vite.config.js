@@ -15,6 +15,14 @@ export default defineConfig({
   // No desenvolvimento, o endereço fica http://localhost:5173/app/
   base: '/app/',
 
+  // Testes automáticos (npm test). O Vitest usa esta mesma configuração.
+  test: {
+    // jsdom = um navegador "de mentira", sem janela, para desenhar os componentes
+    environment: 'jsdom',
+    // Roda antes de cada arquivo de teste (como o conftest.py do pytest)
+    setupFiles: ['./src/testes/preparar.js'],
+  },
+
   server: {
     // Proxy: o React roda em http://localhost:5173 e o Flask em :5000.
     // Quando o React pede "/api/..." ou "/painel/dados", o Vite repassa

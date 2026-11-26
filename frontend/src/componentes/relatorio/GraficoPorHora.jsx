@@ -1,5 +1,7 @@
 import { useState } from 'react'
 
+import { caminhoBarra, chegadas, doisDigitos, escalaDoEixo } from './escala.js'
+
 // Medidas do desenho (em "unidades do SVG"; o navegador estica tudo
 // para a largura da tela, mantendo a proporção)
 const LARGURA = 720
@@ -8,37 +10,6 @@ const MARGEM = { esquerda: 36, direita: 8, topo: 12, base: 28 }
 const AREA_L = LARGURA - MARGEM.esquerda - MARGEM.direita
 const AREA_A = ALTURA - MARGEM.topo - MARGEM.base
 const CHAO = MARGEM.topo + AREA_A // o "y" do zero
-
-/**
- * Topo do eixo: um número "redondo" com no máximo ~5 marcas.
- * Ex.: maior = 7 -> passo 2, topo 8 (marcas 0, 2, 4, 6, 8).
- */
-function escalaDoEixo(maior) {
-  const passo = [1, 2, 5, 10, 20, 50, 100].find((p) => maior / p <= 5) ?? 100
-  const topo = Math.ceil(maior / passo) * passo
-  const marcas = []
-  for (let v = 0; v <= topo; v += passo) marcas.push(v)
-  return { topo, marcas }
-}
-
-/**
- * Contorno de uma barra com só os cantos de CIMA arredondados
- * (a base fica reta, "apoiada" no eixo).
- */
-function caminhoBarra(x, yTopo, largura) {
-  const r = Math.min(4, largura / 2, CHAO - yTopo)
-  return [
-    `M${x},${CHAO}`,
-    `V${yTopo + r}`,
-    `Q${x},${yTopo} ${x + r},${yTopo}`,
-    `H${x + largura - r}`,
-    `Q${x + largura},${yTopo} ${x + largura},${yTopo + r}`,
-    `V${CHAO} Z`,
-  ].join(' ')
-}
-
-const doisDigitos = (hora) => `${String(hora).padStart(2, '0')}h`
-const chegadas = (n) => `${n} ${n === 1 ? 'chegada' : 'chegadas'}`
 
 /**
  * Gráfico de barras: chegadas por hora.
@@ -101,7 +72,7 @@ export default function GraficoPorHora({ porHora }) {
               {/* Área invisível do tamanho da coluna: fácil de acertar com o mouse */}
               <rect className="alvo" x={c.inicio} y={MARGEM.topo} width={coluna} height={AREA_A} />
               {c.total > 0 && (
-                <path className="barra" d={caminhoBarra(c.centro - larguraBarra / 2, y(c.total), larguraBarra)} />
+                <path className="barra" d={caminhoBarra(c.centro - larguraBarra / 2, y(c.total), larguraBarra, CHAO)} />
               )}
               <text className="eixo" x={c.centro} y={CHAO + 18} textAnchor="middle">{c.hora}h</text>
             </g>

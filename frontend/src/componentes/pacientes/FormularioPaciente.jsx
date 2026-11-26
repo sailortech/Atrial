@@ -2,20 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { api } from '../../api.js'
-import { marcarErro } from '../../formularios.js'
+import { marcarErro, mascaraCpf } from '../../formularios.js'
 import ErroDoCampo from '../ErroDoCampo.jsx'
-
-/**
- * Põe os pontos e o traço enquanto a pessoa digita:
- * "5299822" -> "529.982.2". Só deixa números e no máximo 11.
- */
-function mascaraCpf(texto) {
-  const d = texto.replace(/\D/g, '').slice(0, 11)
-  return d
-    .replace(/^(\d{3})(\d)/, '$1.$2')
-    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1-$2')
-}
 
 /**
  * Formulário de paciente, usado no CADASTRO e na EDIÇÃO (igual ao
