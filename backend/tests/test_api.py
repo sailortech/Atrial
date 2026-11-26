@@ -233,3 +233,109 @@ def test_paciente_ou_acao_inexistente(cliente, criar_paciente, endereco):
 
     assert resposta.status_code == 404
     assert resposta.is_json
+
+
+# ---------- Cadastro e edição de paciente ----------
+
+NOVO_PACIENTE = {
+    "nome": "  Joana Lima ",
+    "nascimento": "1985-03-20",
+    "cpf": "390.533.447-05",
+    "prioridade": "Preferencial",
+    "telefone": "(11) 99999-0000",
+    "email": "joana@exemplo.com",
+    "observacoes": "",
+}
+
+
+def test_cadastrar_paciente_pela_api(cliente):
+    resposta = cliente.post("/api/pacientes", json=NOVO_PACIENTE)
+
+    assert resposta.status_code == 201
+    assert resposta.get_json()["mensagem"] == "Paciente Joana Lima cadastrado com sucesso!"
+
+    paciente = Paciente.query.one()
+    assert paciente.nome == "Joana Lima"   # espaços tirados
+    assert paciente.cpf == "39053344705"   # só os dígitos
+    assert paciente.status == "Aguardando"
+    assert paciente.chegada is not None     # entrou na fila agora
+
+
+def test_cadastro_invalido_devolve_erro_por_campo(cliente):
+    resposta = cliente.post("/api/pacientes", json={
+        **NOVO_PACIENTE, "nome": "", "cpf": "111.111.111-11", "prioridade": "VIP",
+    })
+
+    assert resposta.status_code == 422
+    erros = resposta.get_json()["erros"]
+    assert set(erros) == {"nome", "cpf", "prioridade"}  # nascimento estava certo
+    assert Paciente.query.count() == 0
+
+
+def test_cadastro_com_cpf_repetido(cliente, criar_paciente):
+    criar_paciente("Já Existe", cpf="39053344705")
+
+    resposta = cliente.post("/api/pacientes", json=NOVO_PACIENTE)
+
+    assert resposta.status_code == 422
+    assert "Já existe" in resposta.get_json()["erros"]["cpf"]
+
+
+def test_cadastro_com_json_estranho_nao_quebra(cliente):
+    # null e número no lugar de texto: tem de virar erro de validação, não 500
+    resposta = cliente.post("/api/pacientes", json={"nome": None, "cpf": 123})
+
+    assert resposta.status_code == 422
+
+
+def test_ler_paciente_para_editar(cliente, criar_paciente):
+    paciente = criar_paciente("Bruno", cpf="52998224725", email="b@x.com")
+
+    dados = cliente.get(f"/api/pacientes/{paciente.id}").get_json()["paciente"]
+
+    assert dados["nascimento"] == "1990-05-10"   # formato do <input type="date">
+    assert dados["cpf"] == "529.982.247-25"
+    assert dados["email"] == "b@x.com"
+    assert dados["telefone"] == ""                # vazio, nunca null
+
+
+def test_editar_paciente_pela_api(cliente, criar_paciente):
+    paciente = criar_paciente("Bruno", cpf="52998224725", status="Em atendimento",
+                              local="Triagem")
+
+    resposta = cliente.put(f"/api/pacientes/{paciente.id}", json={
+        **NOVO_PACIENTE, "nome": "Bruno Souza", "cpf": "52998224725",  # o próprio CPF pode
+    })
+
+    assert resposta.status_code == 200
+    db.session.refresh(paciente)
+    assert paciente.nome == "Bruno Souza"
+    assert paciente.prioridade == "Preferencial"
+    # Editar dados NÃO mexe no atendimento
+    assert paciente.status == "Em atendimento"
+    assert paciente.local == "Triagem"
+
+
+def test_editar_com_cpf_de_outro_paciente(cliente, criar_paciente):
+    criar_paciente("Ana", cpf="39053344705")
+    bruno = criar_paciente("Bruno", cpf="52998224725")
+
+    resposta = cliente.put(f"/api/pacientes/{bruno.id}", json=NOVO_PACIENTE)
+
+    assert resposta.status_code == 422
+    assert "cpf" in resposta.get_json()["erros"]
+
+
+@pytest.mark.parametrize("metodo", ["get", "put"])
+def test_paciente_inexistente(cliente, metodo):
+    resposta = getattr(cliente, metodo)("/api/pacientes/999", json=NOVO_PACIENTE)
+    assert resposta.status_code == 404
+
+
+def test_prioridades_vem_do_servidor(cliente):
+    dados = cliente.get("/api/pacientes/prioridades").get_json()
+    assert dados["prioridades"] == ["Normal", "Preferencial", "Urgente"]
+
+
+def test_cadastro_pela_api_exige_login(cliente_anonimo):
+    assert cliente_anonimo.post("/api/pacientes", json=NOVO_PACIENTE).status_code == 401

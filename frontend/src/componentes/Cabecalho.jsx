@@ -13,7 +13,9 @@ export default function Cabecalho() {
       <nav>
         {/* NavLink = link que sabe se está na página atual
             (ganha a classe "active" sozinho) */}
-        <NavLink to="/pacientes">Pacientes</NavLink>
+        {/* end: só fica "ativo" em /pacientes exato, não em /pacientes/novo */}
+        <NavLink to="/pacientes" end>Pacientes</NavLink>
+        <NavLink to="/pacientes/novo">Cadastrar</NavLink>
         {/* target="_blank": abre a TV em outra aba */}
         <a href="/painel" target="_blank" rel="noreferrer">Painel da TV</a>
       </nav>

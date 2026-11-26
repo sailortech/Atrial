@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 import Prioridade from './Prioridade.jsx'
 
 export default function TabelaEmAtendimento({ pacientes, acoes }) {
@@ -23,7 +25,10 @@ export default function TabelaEmAtendimento({ pacientes, acoes }) {
           <tbody>
             {pacientes.map((p) => (
               <tr key={p.id} className="em-atendimento">
-                <td>{p.nome}</td>
+                <td>
+                  {p.nome}
+                  <Link to={`/pacientes/${p.id}/editar`} className="editar">editar</Link>
+                </td>
                 <td>{p.local ?? '-'}</td>
                 <td><Prioridade valor={p.prioridade} /></td>
                 <td>{p.chamado_em}</td>

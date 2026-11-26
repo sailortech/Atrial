@@ -140,7 +140,8 @@ button.link.perigo {
 }
 
 input,
-select {
+select,
+textarea {
   font: inherit;
   padding: 8px 10px;
   border: 1px solid #bbb;
@@ -300,4 +301,85 @@ tr.ausente td {
 .prioridade.urgente {
   background: var(--erro-fundo);
   color: var(--erro-texto);
+}
+
+/* ----- Cadastro / edição de paciente ----- */
+
+.titulo-com-acao {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Link com cara de botão (ex.: "+ Cadastrar paciente") */
+a.botao {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+a.botao.principal {
+  background: var(--principal);
+  color: #fff;
+}
+
+a.botao.principal:hover {
+  background: var(--principal-escuro);
+}
+
+.formulario-paciente {
+  max-width: 640px;
+}
+
+.formulario-paciente label small {
+  font-weight: normal;
+  color: var(--texto-suave);
+}
+
+/* Dois campos na mesma linha; no celular, um embaixo do outro */
+.lado-a-lado {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0 16px;
+}
+
+.lado-a-lado > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+textarea {
+  resize: vertical;
+}
+
+/* Campo recusado pelo servidor: borda e mensagem em vermelho */
+[aria-invalid="true"] {
+  border-color: var(--erro-texto);
+  outline-color: var(--erro-texto);
+}
+
+.erro-campo {
+  color: var(--erro-texto);
+  font-size: 0.9rem;
+}
+
+.botoes {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.formulario .botoes button {
+  margin-top: 0; /* a margem agora é da linha toda, não só do botão */
+}
+
+/* "editar" discreto ao lado do nome, nas tabelas */
+td a.editar {
+  margin-left: 8px;
+  font-size: 0.85rem;
+  color: var(--texto-suave);
 }

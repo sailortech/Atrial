@@ -382,37 +382,50 @@ def formatar_minutos(minutos):
     return f"{horas}h {minutos:02d}min"
 
 
-def ler_formulario(paciente_id=None):
+def ler_formulario(paciente_id=None, origem=None):
     """Lê, limpa e valida os campos do formulário de paciente.
 
-    Devolve (dados, erros). Lista de erros vazia = tudo certo.
+    origem = de onde vêm os campos: o formulário HTML (padrão) ou o
+    JSON que o React mandou. Os dois têm .get(), então a mesma
+    validação serve para as duas telas.
+
+    Devolve (dados, erros). erros é um dicionário campo -> mensagem
+    (ex.: {"cpf": "CPF inválido..."}); vazio = tudo certo. Por campo
+    para o React poder mostrar cada erro embaixo do seu campo.
     Na edição, passe paciente_id para o próprio paciente
     não ser acusado de CPF duplicado.
     """
+    if origem is None:
+        origem = request.form
+
+    def campo(nome):
+        # str(): no JSON pode vir número ou null; no formulário é sempre texto
+        valor = origem.get(nome)
+        return "" if valor is None else str(valor).strip()
 
     dados = {
-        "nome": request.form.get("nome", "").strip(),
-        "nascimento": request.form.get("nascimento", "").strip(),
-        "cpf": somente_digitos(request.form.get("cpf", "")),
-        "prioridade": request.form.get("prioridade", ""),
-        "telefone": request.form.get("telefone", "").strip(),
-        "email": request.form.get("email", "").strip(),
-        "observacoes": request.form.get("observacoes", "").strip(),
+        "nome": campo("nome"),
+        "nascimento": campo("nascimento"),
+        "cpf": somente_digitos(campo("cpf")),
+        "prioridade": campo("prioridade"),
+        "telefone": campo("telefone"),
+        "email": campo("email"),
+        "observacoes": campo("observacoes"),
     }
 
-    erros = []
+    erros = {}
 
     if not dados["nome"]:
-        erros.append("Informe o nome do paciente.")
+        erros["nome"] = "Informe o nome do paciente."
 
     try:
         if date.fromisoformat(dados["nascimento"]) > date.today():
-            erros.append("A data de nascimento não pode estar no futuro.")
+            erros["nascimento"] = "A data de nascimento não pode estar no futuro."
     except ValueError:
-        erros.append("Informe uma data de nascimento válida.")
+        erros["nascimento"] = "Informe uma data de nascimento válida."
 
     if not cpf_valido(dados["cpf"]):
-        erros.append("CPF inválido. Confira os números digitados.")
+        erros["cpf"] = "CPF inválido. Confira os números digitados."
     else:
         mesmo_cpf = Paciente.query.filter_by(cpf=dados["cpf"])
 
@@ -420,12 +433,27 @@ def ler_formulario(paciente_id=None):
             mesmo_cpf = mesmo_cpf.filter(Paciente.id != paciente_id)
 
         if mesmo_cpf.first():
-            erros.append("Já existe um paciente cadastrado com este CPF.")
+            erros["cpf"] = "Já existe um paciente cadastrado com este CPF."
 
     if dados["prioridade"] not in PRIORIDADES:
-        erros.append("Escolha uma prioridade válida.")
+        erros["prioridade"] = "Escolha uma prioridade válida."
 
     return dados, erros
+
+
+def acao_cadastrar_paciente(dados):
+    """Cria o paciente (já validado) e o coloca no fim da fila."""
+    paciente = Paciente(**dados, status="Aguardando", chegada=datetime.now())
+    db.session.add(paciente)
+    db.session.commit()
+    return paciente
+
+
+def acao_editar_paciente(paciente, dados):
+    """Atualiza os dados (já validados). Status e horários não mudam."""
+    for nome, valor in dados.items():
+        setattr(paciente, nome, valor)
+    db.session.commit()
 
 
 def mostrar_erros(erros):
@@ -734,18 +762,11 @@ def cadastro_paciente():
         dados, erros = ler_formulario()
 
         if erros:
-            mostrar_erros(erros)
+            mostrar_erros(erros.values())
             # Mostra o formulário de novo, com o que já foi digitado
             return render_template("cadastros.html", dados=dados)
 
-        paciente = Paciente(
-            **dados,
-            status="Aguardando",
-            chegada=datetime.now()
-        )
-
-        db.session.add(paciente)
-        db.session.commit()
+        paciente = acao_cadastrar_paciente(dados)
 
         flash(f"Paciente {paciente.nome} cadastrado com sucesso!", "sucesso")
 
@@ -1100,18 +1121,10 @@ def editar_paciente(id):
         dados, erros = ler_formulario(paciente_id=id)
 
         if erros:
-            mostrar_erros(erros)
+            mostrar_erros(erros.values())
             return render_template("editar_paciente.html", dados=dados)
 
-        paciente.nome = dados["nome"]
-        paciente.nascimento = dados["nascimento"]
-        paciente.cpf = dados["cpf"]
-        paciente.prioridade = dados["prioridade"]
-        paciente.telefone = dados["telefone"]
-        paciente.email = dados["email"]
-        paciente.observacoes = dados["observacoes"]
-
-        db.session.commit()
+        acao_editar_paciente(paciente, dados)
 
         flash(f"Dados de {paciente.nome} atualizados.", "sucesso")
 
@@ -1565,6 +1578,76 @@ def api_acao_paciente(id, acao):
         return jsonify(erro="Paciente não encontrado."), 404
 
     return resposta_da_acao(ACOES_DE_ATENDIMENTO[acao](paciente))
+
+
+# ---------- API: cadastro e edição de paciente ----------
+
+def paciente_para_formulario(paciente):
+    """Os dados CRUS que o formulário de edição precisa (data no formato
+    AAAA-MM-DD do <input type="date">, e-mail...). paciente_json é para
+    MOSTRAR; este é para EDITAR."""
+    return {
+        "id": paciente.id,
+        "nome": paciente.nome,
+        "nascimento": paciente.nascimento,
+        "cpf": formatar_cpf(paciente.cpf),
+        "prioridade": paciente.prioridade,
+        "telefone": paciente.telefone or "",
+        "email": paciente.email or "",
+        "observacoes": paciente.observacoes or "",
+        "status": paciente.status,
+    }
+
+
+def erros_de_validacao(erros):
+    """422 = "entendi o pedido, mas os dados não passam na validação"."""
+    return jsonify(erro="Confira os campos destacados.", erros=erros), 422
+
+
+@app.get("/api/pacientes/prioridades")
+def api_prioridades():
+    # A lista vem do servidor: quem decide o que é válido é o Flask
+    return jsonify(prioridades=PRIORIDADES)
+
+
+@app.post("/api/pacientes")
+def api_cadastrar_paciente():
+    dados, erros = ler_formulario(origem=request.get_json(silent=True) or {})
+    if erros:
+        return erros_de_validacao(erros)
+
+    paciente = acao_cadastrar_paciente(dados)
+    # 201 = "criado"
+    return jsonify(
+        mensagem=f"Paciente {paciente.nome} cadastrado com sucesso!",
+        paciente=paciente_para_formulario(paciente),
+    ), 201
+
+
+@app.get("/api/pacientes/<int:id>")
+def api_paciente(id):
+    paciente = db.session.get(Paciente, id)
+    if paciente is None:
+        return jsonify(erro="Paciente não encontrado."), 404
+    return jsonify(paciente=paciente_para_formulario(paciente))
+
+
+# PUT = "substitua os dados deste paciente por estes"
+@app.put("/api/pacientes/<int:id>")
+def api_editar_paciente(id):
+    paciente = db.session.get(Paciente, id)
+    if paciente is None:
+        return jsonify(erro="Paciente não encontrado."), 404
+
+    dados, erros = ler_formulario(paciente_id=id, origem=request.get_json(silent=True) or {})
+    if erros:
+        return erros_de_validacao(erros)
+
+    acao_editar_paciente(paciente, dados)
+    return jsonify(
+        mensagem=f"Dados de {paciente.nome} atualizados.",
+        paciente=paciente_para_formulario(paciente),
+    )
 
 
 if __name__ == "__main__":

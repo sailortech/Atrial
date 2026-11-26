@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 import Prioridade from './Prioridade.jsx'
 
 export default function TabelaFila({ pacientes }) {
@@ -24,7 +26,10 @@ export default function TabelaFila({ pacientes }) {
             {pacientes.map((p) => (
               <tr key={p.id}>
                 <td>{p.posicao}º</td>
-                <td>{p.nome}</td>
+                <td>
+                  {p.nome}
+                  <Link to={`/pacientes/${p.id}/editar`} className="editar">editar</Link>
+                </td>
                 <td><Prioridade valor={p.prioridade} /></td>
                 <td>{p.chegada}</td>
                 <td>{p.esperando_ha}</td>

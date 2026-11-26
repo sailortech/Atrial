@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from '../api.js'
 import BarraDeChamada from '../componentes/pacientes/BarraDeChamada.jsx'
@@ -27,7 +28,21 @@ export default function Pacientes() {
   }, [digitado])
 
   const { dados, erro, recarregar } = usePacientes(termo)
-  const [mensagem, setMensagem] = useState(null) // { tipo, texto }
+
+  // Chegou aqui vindo do cadastro/edição? A mensagem veio no "state"
+  // da navegação (veja NovoPaciente). Ela vira o valor INICIAL.
+  const location = useLocation()
+  const navigate = useNavigate()
+  const recebida = location.state?.mensagem
+  const [mensagem, setMensagem] = useState(
+    recebida ? { tipo: 'sucesso', texto: recebida } : null, // { tipo, texto }
+  )
+
+  // ...e depois é apagada do histórico do navegador. Sem isto, ao
+  // apertar F5 o "Paciente cadastrado" apareceria de novo.
+  useEffect(() => {
+    if (recebida) navigate(location.pathname, { replace: true, state: null })
+  }, [recebida, location.pathname, navigate])
 
   /**
    * Executa uma ação no servidor e mostra o resultado.
@@ -62,7 +77,10 @@ export default function Pacientes() {
 
   return (
     <>
-      <h2>Pacientes</h2>
+      <div className="titulo-com-acao">
+        <h2>Pacientes</h2>
+        <Link to="/pacientes/novo" className="botao principal">+ Cadastrar paciente</Link>
+      </div>
 
       {mensagem && (
         <p className={`mensagem ${mensagem.tipo}`}>

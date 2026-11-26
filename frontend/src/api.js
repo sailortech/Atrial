@@ -55,4 +55,5 @@ async function pedir(metodo, caminho, corpo) {
 export const api = {
   get: (caminho) => pedir('GET', caminho),
   post: (caminho, corpo) => pedir('POST', caminho, corpo),
+  put: (caminho, corpo) => pedir('PUT', caminho, corpo),
 }
