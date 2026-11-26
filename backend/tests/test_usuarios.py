@@ -1,4 +1,4 @@
-"""Testes de papéis (recepção x administração) e da página Usuários."""
+"""Testes de papéis (recepção x administração) e do cadastro de usuários."""
 
 import pytest
 
@@ -7,19 +7,6 @@ from conftest import SENHA_TESTE, navegador_logado
 
 # Rotas que SÓ a administração pode usar: (método, endereço)
 ROTAS_DE_ADMIN = [
-    ("get", "/locais"),
-    ("post", "/locais"),
-    ("post", "/locais/1/alternar"),
-    ("get", "/usuarios"),
-    ("post", "/usuarios"),
-    ("post", "/usuarios/1/ativo"),
-    ("post", "/usuarios/1/admin"),
-    ("get", "/usuarios/1/senha"),
-    ("post", "/usuarios/1/senha"),
-]
-
-# As mesmas proteções na API do React (lá a resposta é JSON 403)
-ROTAS_DE_ADMIN_API = [
     ("get", "/api/locais"),
     ("post", "/api/locais"),
     ("post", "/api/locais/1/alternar"),
@@ -35,19 +22,25 @@ def usuario(login):
     return Usuario.query.filter_by(login=login).one()
 
 
+def alterar(cliente, alguem, acao):
+    return cliente.post(f"/api/usuarios/{alguem.id}/{acao}")
+
+
+def criar(cliente, **dados):
+    return cliente.post("/api/usuarios", json=dados)
+
+
+def entrar(navegador, login="ana", senha=SENHA_TESTE):
+    return navegador.post("/api/login", json={"login": login, "senha": senha})
+
+
 # ---------- Recepção x administração ----------
 
 @pytest.mark.parametrize("metodo, endereco", ROTAS_DE_ADMIN)
-def test_recepcao_nao_entra_nas_paginas_de_admin(cliente, metodo, endereco):
-    resposta = getattr(cliente, metodo)(endereco, data={"nome": "X", "login": "xyz"})
-
-    assert resposta.status_code == 302
-    assert resposta.location == "/pacientes"
-
-
-@pytest.mark.parametrize("metodo, endereco", ROTAS_DE_ADMIN_API)
-def test_recepcao_nao_usa_a_api_de_admin(cliente, metodo, endereco):
-    resposta = getattr(cliente, metodo)(endereco, json={"nome": "Invasor", "login": "invasor", "senha": "12345678", "admin": True})
+def test_recepcao_nao_usa_as_rotas_de_admin(cliente, metodo, endereco):
+    resposta = getattr(cliente, metodo)(endereco, json={
+        "nome": "Invasor", "login": "invasor", "senha": "12345678", "admin": True,
+    })
 
     assert resposta.status_code == 403
     assert "administração" in resposta.get_json()["erro"]
@@ -56,27 +49,18 @@ def test_recepcao_nao_usa_a_api_de_admin(cliente, metodo, endereco):
 
 
 def test_recepcao_nao_consegue_mudar_nada(cliente, admin):
-    cliente.post("/locais", data={"nome": "Invasor"})
-    cliente.post("/locais/1/alternar")
-    cliente.post("/usuarios", data={"nome": "X", "login": "hacker", "senha": "12345678", "admin": "sim"})
-    cliente.post(f"/usuarios/{admin.id}/ativo")
+    cliente.post("/api/locais/1/alternar")
+    alterar(cliente, admin, "ativo")
+    alterar(cliente, admin, "admin")
 
-    assert Local.query.filter_by(nome="Invasor").first() is None
     assert db.session.get(Local, 1).ativo
-    assert Usuario.query.filter_by(login="hacker").first() is None
-    assert usuario("bia").ativo
+    assert usuario("bia").ativo and usuario("bia").admin
 
 
-def test_menu_da_recepcao_nao_mostra_paginas_de_admin(cliente):
-    html = cliente.get("/pacientes").get_data(as_text=True)
-
-    assert 'href="/usuarios"' not in html and 'href="/locais"' not in html
-
-
-def test_menu_da_administracao_mostra_tudo(cliente_admin):
-    html = cliente_admin.get("/pacientes").get_data(as_text=True)
-
-    assert 'href="/usuarios"' in html and 'href="/locais"' in html
+def test_sessao_diz_o_papel(cliente, cliente_admin):
+    """É por aqui que o React decide mostrar (ou não) Locais e Usuários."""
+    assert cliente.get("/api/sessao").get_json()["usuario"]["admin"] is False
+    assert cliente_admin.get("/api/sessao").get_json()["usuario"]["admin"] is True
 
 
 def test_toda_rota_de_admin_esta_na_lista():
@@ -93,19 +77,17 @@ def test_toda_rota_de_admin_esta_na_lista():
     mapa = flask_app.url_map.bind("localhost")
     testadas = {
         mapa.match(endereco, method=metodo.upper())[0]
-        for metodo, endereco in ROTAS_DE_ADMIN + ROTAS_DE_ADMIN_API
+        for metodo, endereco in ROTAS_DE_ADMIN
     }
 
     assert so_admin, "nenhuma rota com a etiqueta? o decorador mudou?"
     assert so_admin == testadas
 
 
-# ---------- Criar usuário pela página ----------
+# ---------- Criar usuário ----------
 
 def test_admin_cria_usuario_da_recepcao(cliente_admin):
-    cliente_admin.post("/usuarios", data={
-        "nome": "Carla Dias", "login": "Carla.Dias", "senha": "senha-boa-123",
-    })
+    criar(cliente_admin, nome="Carla Dias", login="Carla.Dias", senha="senha-boa-123")
 
     carla = usuario("carla.dias")  # login sempre em minúsculas
     assert not carla.admin and carla.ativo
@@ -114,71 +96,63 @@ def test_admin_cria_usuario_da_recepcao(cliente_admin):
 
 
 def test_admin_cria_outro_admin(cliente_admin):
-    cliente_admin.post("/usuarios", data={
-        "nome": "Davi", "login": "davi", "senha": "senha-boa-123", "admin": "sim",
-    })
+    criar(cliente_admin, nome="Davi", login="davi", senha="senha-boa-123", admin=True)
 
     assert usuario("davi").admin
 
 
-@pytest.mark.parametrize("dados, erro", [
-    ({"nome": "", "login": "novo", "senha": "senha-boa-123"}, "Informe o nome"),
-    ({"nome": "X", "login": "ab", "senha": "senha-boa-123"}, "de 3 a 50 caracteres"),
-    ({"nome": "X", "login": "joão", "senha": "senha-boa-123"}, "letras sem acento"),
-    ({"nome": "X", "login": "com espaço", "senha": "senha-boa-123"}, "letras sem acento"),
-    ({"nome": "X", "login": "bia", "senha": "senha-boa-123"}, "Já existe o usuário"),
-    ({"nome": "X", "login": "novo", "senha": "curta"}, "pelo menos 8"),
+@pytest.mark.parametrize("dados, campo, erro", [
+    ({"nome": "", "login": "novo", "senha": "senha-boa-123"}, "nome", "Informe o nome"),
+    ({"nome": "X", "login": "ab", "senha": "senha-boa-123"}, "login", "de 3 a 50 caracteres"),
+    ({"nome": "X", "login": "joão", "senha": "senha-boa-123"}, "login", "letras sem acento"),
+    ({"nome": "X", "login": "com espaço", "senha": "senha-boa-123"}, "login", "letras sem acento"),
+    ({"nome": "X", "login": "bia", "senha": "senha-boa-123"}, "login", "Já existe o usuário"),
+    ({"nome": "X", "login": "novo", "senha": "curta"}, "senha", "pelo menos 8"),
 ])
-def test_criar_usuario_invalido(cliente_admin, dados, erro):
-    resposta = cliente_admin.post("/usuarios", data=dados)
+def test_criar_usuario_invalido(cliente_admin, dados, campo, erro):
+    resposta = criar(cliente_admin, **dados)
 
-    assert erro in resposta.get_data(as_text=True)
+    assert erro in resposta.get_json()["erros"][campo]
     assert Usuario.query.count() == 1  # só a própria bia
 
 
-def test_erro_devolve_o_formulario_sem_a_senha(cliente_admin):
-    resposta = cliente_admin.post("/usuarios", data={
-        "nome": "Carla", "login": "ca", "senha": "senha-secreta-999",
-    })
-    html = resposta.get_data(as_text=True)
+def test_erro_nao_devolve_a_senha(cliente_admin):
+    resposta = criar(cliente_admin, nome="Carla", login="ca", senha="senha-secreta-999")
 
-    assert 'value="Carla"' in html               # o nome volta preenchido
-    assert "senha-secreta-999" not in html       # a senha, não
+    assert "senha-secreta-999" not in resposta.get_data(as_text=True)
 
 
 # ---------- Desativar ----------
 
 def test_desativado_nao_consegue_entrar(cliente_admin, usuario, cliente_anonimo):
-    cliente_admin.post(f"/usuarios/{usuario.id}/ativo")
+    alterar(cliente_admin, usuario, "ativo")
 
-    resposta = cliente_anonimo.post("/login", data={"login": "ana", "senha": SENHA_TESTE})
+    resposta = entrar(cliente_anonimo)
 
-    assert "foi desativado" in resposta.get_data(as_text=True)
-    assert cliente_anonimo.get("/pacientes").status_code == 302
+    assert "foi desativado" in resposta.get_json()["erro"]
+    assert cliente_anonimo.get("/api/pacientes").status_code == 401
 
 
 def test_desativado_e_posto_para_fora_na_hora(cliente_admin, usuario, cliente):
     """A Ana estava com o sistema aberto quando foi desativada."""
-    assert cliente.get("/pacientes").status_code == 200
+    assert cliente.get("/api/pacientes").status_code == 200
 
-    cliente_admin.post(f"/usuarios/{usuario.id}/ativo")
+    alterar(cliente_admin, usuario, "ativo")
 
-    assert cliente.get("/pacientes").status_code == 302  # foi para o login
+    assert cliente.get("/api/pacientes").status_code == 401  # o React mostra o login
 
 
 def test_senha_errada_de_desativado_nao_revela_nada(cliente_admin, usuario, cliente_anonimo):
-    cliente_admin.post(f"/usuarios/{usuario.id}/ativo")
+    alterar(cliente_admin, usuario, "ativo")
 
-    resposta = cliente_anonimo.post("/login", data={"login": "ana", "senha": "errada"})
+    resposta = entrar(cliente_anonimo, senha="errada")
 
-    html = resposta.get_data(as_text=True)
-    assert "Usuário ou senha incorretos" in html
-    assert "desativado" not in html
+    assert resposta.get_json()["erro"] == "Usuário ou senha incorretos."
 
 
 def test_reativar(cliente_admin, usuario):
-    cliente_admin.post(f"/usuarios/{usuario.id}/ativo")
-    cliente_admin.post(f"/usuarios/{usuario.id}/ativo")
+    alterar(cliente_admin, usuario, "ativo")
+    alterar(cliente_admin, usuario, "ativo")
 
     assert usuario.ativo
 
@@ -186,10 +160,11 @@ def test_reativar(cliente_admin, usuario):
 # ---------- Travas de segurança ----------
 
 def test_ninguem_mexe_no_proprio_acesso(cliente_admin, admin):
-    resposta = cliente_admin.post(f"/usuarios/{admin.id}/ativo", follow_redirects=True)
-    cliente_admin.post(f"/usuarios/{admin.id}/admin")
+    for acao in ("ativo", "admin", "senha"):
+        resposta = cliente_admin.post(f"/api/usuarios/{admin.id}/{acao}", json={"nova": "x" * 8})
+        assert resposta.status_code == 409
 
-    assert "seu próprio acesso" in resposta.get_data(as_text=True)
+    assert "seu próprio acesso" in alterar(cliente_admin, admin, "ativo").get_json()["erro"]
     assert admin.ativo and admin.admin
 
 
@@ -200,17 +175,13 @@ def test_admin_pode_tirar_outro_admin(cliente_admin):
     db.session.add(davi)
     db.session.commit()
 
-    cliente_admin.post(f"/usuarios/{davi.id}/admin")
+    alterar(cliente_admin, davi, "admin")
     assert not davi.admin
 
-    cliente_admin.post(f"/usuarios/{davi.id}/ativo")
+    alterar(cliente_admin, davi, "ativo")
     assert not davi.ativo
 
     assert Usuario.query.filter_by(admin=True, ativo=True).count() == 1  # a Bia
-
-
-def test_acao_desconhecida(cliente_admin, usuario):
-    assert cliente_admin.post(f"/usuarios/{usuario.id}/apagar").status_code == 404
 
 
 # ---------- Comando de terminal ----------
@@ -272,13 +243,6 @@ def test_api_alterna_papel_e_situacao(cliente_admin, usuario):
 
     cliente_admin.post(f"/api/usuarios/{usuario.id}/ativo")
     assert not usuario.ativo
-
-
-def test_api_nao_mexe_no_proprio_acesso(cliente_admin, admin):
-    for acao in ("ativo", "admin", "senha"):
-        resposta = cliente_admin.post(f"/api/usuarios/{admin.id}/{acao}", json={"nova": "x" * 8})
-        assert resposta.status_code == 409
-    assert admin.admin and admin.ativo
 
 
 def test_api_redefine_senha(app, cliente_admin, usuario):

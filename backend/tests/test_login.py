@@ -2,87 +2,86 @@
 
 import pytest
 
-from app import PAGINAS_PUBLICAS, Paciente, Usuario, app, endereco_seguro
+from app import PAGINAS_PUBLICAS, Paciente, Usuario, app
 from conftest import SENHA_TESTE
 
 
-# ---------- Páginas protegidas ----------
+def entrar(navegador, login="ana", senha=SENHA_TESTE):
+    return navegador.post("/api/login", json={"login": login, "senha": senha})
 
-@pytest.mark.parametrize("pagina", ["/", "/pacientes", "/pacientes/novo"])
-def test_sem_login_vai_para_a_tela_de_login(cliente_anonimo, pagina):
-    resposta = cliente_anonimo.get(pagina)
 
-    assert resposta.status_code == 302
-    assert resposta.location.startswith("/login")
+def esta_logado(navegador):
+    return navegador.get("/api/sessao").get_json()["usuario"] is not None
 
+
+# ---------- O que fica protegido ----------
 
 def test_sem_login_nao_consegue_excluir(cliente_anonimo, criar_paciente):
     paciente = criar_paciente("Bruno")
 
-    cliente_anonimo.post(f"/pacientes/excluir/{paciente.id}")
+    resposta = cliente_anonimo.delete(f"/api/pacientes/{paciente.id}")
 
+    assert resposta.status_code == 401
     assert Paciente.query.count() == 1  # continua lá
 
 
 def test_sem_login_nao_consegue_chamar(cliente_anonimo, criar_paciente):
     criar_paciente("Bruno")
 
-    cliente_anonimo.post("/pacientes/chamar-proximo")
+    cliente_anonimo.post("/api/pacientes/chamar-proximo", json={"local": "Triagem"})
 
     assert Paciente.query.one().status == "Aguardando"
 
 
-@pytest.mark.parametrize("pagina", ["/painel", "/painel/dados", "/login"])
-def test_paginas_publicas_abrem_sem_login(cliente_anonimo, pagina):
-    assert cliente_anonimo.get(pagina).status_code == 200
+@pytest.mark.parametrize("endereco", ["/painel/dados", "/api/sessao"])
+def test_enderecos_publicos_abrem_sem_login(cliente_anonimo, endereco):
+    assert cliente_anonimo.get(endereco).status_code == 200
 
 
 def test_todas_as_rotas_novas_nascem_protegidas(cliente_anonimo):
     """Rede de segurança: percorre TODAS as rotas do app.
     Se alguém criar uma rota e ela abrir sem login, este teste avisa."""
     # Escrita AQUI de propósito (e comparada com a do app): tornar uma
-    # página pública exige mexer nos dois lugares, ou seja, uma decisão.
+    # rota pública exige mexer nos dois lugares, ou seja, uma decisão.
     publicas = {
-        "login", "static", "painel", "painel_dados", "api_sessao", "api_login",
+        "painel_dados", "api_sessao", "api_login",
         # Só os arquivos do React (sem dados); a API continua fechada.
         # Ver test_frontend.py::test_api_continua_exigindo_login
         "frontend_react",
+        # Só redirecionam para /app/ (ver test_frontend.py)
+        "endereco_antigo",
     }
     assert PAGINAS_PUBLICAS == publicas
 
+    testadas = 0
     for regra in app.url_map.iter_rules():
-        if regra.endpoint in publicas:
+        if regra.endpoint in publicas or regra.endpoint == "static":
             continue
         # Troca <int:id> e <acao> por valores para montar um endereço de verdade
         endereco = regra.rule.replace("<int:id>", "1").replace("<acao>", "concluir")
-        metodo = "post" if "POST" in regra.methods else "get"
 
-        resposta = getattr(cliente_anonimo, metodo)(endereco)
+        for metodo in regra.methods - {"HEAD", "OPTIONS"}:
+            resposta = cliente_anonimo.open(endereco, method=metodo)
+            # 401 em JSON: o React mostra a tela de login
+            assert resposta.status_code == 401, f"{metodo} {endereco} abriu sem login!"
+            testadas += 1
 
-        if endereco.startswith("/api/"):
-            # API: responde 401 em JSON (o React mostra a tela de login)
-            assert resposta.status_code == 401, f"{endereco} abriu sem login!"
-        else:
-            assert resposta.status_code == 302, f"{endereco} abriu sem login!"
-            assert resposta.location.startswith("/login")
+    assert testadas > 15  # o teste percorreu mesmo as rotas da API (eram 19)
 
 
 # ---------- Entrar e sair ----------
 
 def test_login_certo_entra(cliente_anonimo, usuario):
-    resposta = cliente_anonimo.post(
-        "/login", data={"login": "ana", "senha": SENHA_TESTE},
-        follow_redirects=True,
-    )
+    resposta = entrar(cliente_anonimo)
 
-    assert "Olá, Ana Recepção!" in resposta.get_data(as_text=True)
-    assert cliente_anonimo.get("/pacientes").status_code == 200
+    assert resposta.get_json()["usuario"]["nome"] == "Ana Recepção"
+    assert cliente_anonimo.get("/api/pacientes").status_code == 200
 
 
 def test_login_ignora_maiusculas_e_espacos_no_usuario(cliente_anonimo, usuario):
-    cliente_anonimo.post("/login", data={"login": "  ANA ", "senha": SENHA_TESTE})
+    entrar(cliente_anonimo, login="  ANA ")
 
-    assert cliente_anonimo.get("/pacientes").status_code == 200
+    assert esta_logado(cliente_anonimo)
 
 
 @pytest.mark.parametrize("login, senha", [
@@ -91,59 +90,18 @@ def test_login_ignora_maiusculas_e_espacos_no_usuario(cliente_anonimo, usuario):
     ("ana", ""),
 ])
 def test_login_errado_nao_entra(cliente_anonimo, usuario, login, senha):
-    resposta = cliente_anonimo.post("/login", data={"login": login, "senha": senha})
+    resposta = entrar(cliente_anonimo, login=login, senha=senha)
 
+    assert resposta.status_code == 401
     # Mesma mensagem nos dois casos: não revela quais usuários existem
-    assert "Usuário ou senha incorretos." in resposta.get_data(as_text=True)
-    assert cliente_anonimo.get("/pacientes").status_code == 302
+    assert resposta.get_json()["erro"] == "Usuário ou senha incorretos."
+    assert not esta_logado(cliente_anonimo)
 
 
 def test_sair_bloqueia_de_novo(cliente):
-    cliente.post("/logout")
+    cliente.post("/api/logout")
 
-    assert cliente.get("/pacientes").status_code == 302
-
-
-def test_depois_do_login_volta_para_a_pagina_pedida(cliente_anonimo, usuario):
-    pedido = cliente_anonimo.get("/pacientes?q=ana")
-
-    resposta = cliente_anonimo.post(
-        pedido.location,  # /login?proxima=/pacientes?q=ana
-        data={"login": "ana", "senha": SENHA_TESTE},
-    )
-
-    assert resposta.location == "/pacientes?q=ana"
-
-
-def test_pagina_sem_busca_volta_sem_interrogacao(cliente_anonimo, usuario):
-    pedido = cliente_anonimo.get("/pacientes/novo")
-
-    resposta = cliente_anonimo.post(
-        pedido.location, data={"login": "ana", "senha": SENHA_TESTE}
-    )
-
-    assert resposta.location == "/pacientes/novo"
-
-
-def test_login_nao_redireciona_para_outro_site(cliente_anonimo, usuario):
-    resposta = cliente_anonimo.post(
-        "/login?proxima=https://site-falso.com",
-        data={"login": "ana", "senha": SENHA_TESTE},
-    )
-
-    assert resposta.location == "/pacientes"
-
-
-@pytest.mark.parametrize("endereco, seguro", [
-    ("/pacientes", True),
-    ("/pacientes?q=ana", True),
-    ("https://site-falso.com", False),
-    ("//site-falso.com", False),
-    ("/\\site-falso.com", False),
-    ("", False),
-])
-def test_endereco_seguro(endereco, seguro):
-    assert endereco_seguro(endereco) == seguro
+    assert cliente.get("/api/pacientes").status_code == 401
 
 
 # ---------- Senha ----------

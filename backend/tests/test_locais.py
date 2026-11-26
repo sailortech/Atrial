@@ -1,4 +1,4 @@
-"""Testes do cadastro de locais (/locais)."""
+"""Testes dos locais de atendimento (guichês, consultórios)."""
 
 from datetime import date, datetime
 
@@ -11,28 +11,39 @@ def local(nome):
     return Local.query.filter_by(nome=nome).one()
 
 
+def adicionar(cliente, nome):
+    return cliente.post("/api/locais", json={"nome": nome})
+
+
+def alternar(cliente, nome):
+    return cliente.post(f"/api/locais/{local(nome).id}/alternar")
+
+
+def chamar_para(cliente):
+    """As opções do "Chamar para..." da tela de pacientes."""
+    return cliente.get("/api/pacientes").get_json()["locais"]
+
+
 # ---------- Adicionar ----------
 
 def test_adicionar_local(cliente_admin):
-    cliente_admin.post("/locais", data={"nome": "  Consultório   4 "})
+    adicionar(cliente_admin, "  Consultório   4 ")
 
     assert local("Consultório 4").ativo  # espaços sobrando foram limpos
     assert "Consultório 4" in nomes_dos_locais_ativos()
 
 
 def test_novo_local_aparece_no_chamar_para(cliente_admin):
-    cliente_admin.post("/locais", data={"nome": "Sala de Vacina"})
+    adicionar(cliente_admin, "Sala de Vacina")
 
-    html = cliente_admin.get("/pacientes").get_data(as_text=True)
-
-    assert '<option value="Sala de Vacina"' in html
+    assert "Sala de Vacina" in chamar_para(cliente_admin)
 
 
 @pytest.mark.parametrize("nome", ["Triagem", "triagem", "CONSULTORIO 1", "consultório 1"])
 def test_nao_aceita_local_repetido(cliente_admin, nome):
-    resposta = cliente_admin.post("/locais", data={"nome": nome}, follow_redirects=True)
+    resposta = adicionar(cliente_admin, nome)
 
-    assert "Já existe um local" in resposta.get_data(as_text=True)
+    assert "Já existe um local" in resposta.get_json()["erros"]["nome"]
     assert Local.query.count() == 4  # continua com os 4 iniciais
 
 
@@ -42,49 +53,46 @@ def test_nao_aceita_local_repetido(cliente_admin, nome):
     ("x" * 51, "no máximo 50"),
 ])
 def test_nome_invalido(cliente_admin, nome, erro):
-    resposta = cliente_admin.post("/locais", data={"nome": nome}, follow_redirects=True)
+    resposta = adicionar(cliente_admin, nome)
 
-    assert erro in resposta.get_data(as_text=True)
+    assert erro in resposta.get_json()["erros"]["nome"]
     assert Local.query.count() == 4
 
 
 # ---------- Desativar e reativar ----------
 
 def test_desativar_tira_do_chamar_para(cliente_admin):
-    cliente_admin.post(f"/locais/{local('Consultório 3').id}/alternar")
+    alternar(cliente_admin, "Consultório 3")
 
     assert not local("Consultório 3").ativo
-    html = cliente_admin.get("/pacientes").get_data(as_text=True)
-    assert '<option value="Consultório 3"' not in html
+    assert "Consultório 3" not in chamar_para(cliente_admin)
 
 
 def test_nao_chama_para_local_desativado(cliente_admin, criar_paciente):
     paciente = criar_paciente("Ana")
-    cliente_admin.post(f"/locais/{local('Consultório 3').id}/alternar")
+    alternar(cliente_admin, "Consultório 3")
 
-    cliente_admin.post("/pacientes/chamar-proximo", data={"local": "Consultório 3"})
+    cliente_admin.post("/api/pacientes/chamar-proximo", json={"local": "Consultório 3"})
 
     db.session.refresh(paciente)
     assert paciente.status == "Aguardando"
 
 
 def test_reativar(cliente_admin):
-    id_ = local("Consultório 3").id
-    cliente_admin.post(f"/locais/{id_}/alternar")  # desativa
-    cliente_admin.post(f"/locais/{id_}/alternar")  # reativa
+    alternar(cliente_admin, "Consultório 3")  # desativa
+    alternar(cliente_admin, "Consultório 3")  # reativa
 
     assert local("Consultório 3").ativo
 
 
 def test_nao_deixa_desativar_o_ultimo_local(cliente_admin):
     for nome in ["Consultório 1", "Consultório 2", "Consultório 3"]:
-        cliente_admin.post(f"/locais/{local(nome).id}/alternar")
+        alternar(cliente_admin, nome)
 
-    resposta = cliente_admin.post(
-        f"/locais/{local('Triagem').id}/alternar", follow_redirects=True
-    )
+    resposta = alternar(cliente_admin, "Triagem")
 
-    assert "pelo menos um local ativo" in resposta.get_data(as_text=True)
+    assert resposta.status_code == 409
+    assert "pelo menos um local ativo" in resposta.get_json()["erro"]
     assert local("Triagem").ativo
 
 
@@ -92,18 +100,17 @@ def test_historico_continua_com_o_nome_do_local_desativado(cliente_admin, criar_
     criar_paciente("Ana", status="Concluído", local="Consultório 3",
                    chamado_em=datetime.now(), concluido_em=datetime.now())
 
-    cliente_admin.post(f"/locais/{local('Consultório 3').id}/alternar")
+    alternar(cliente_admin, "Consultório 3")
 
-    html = cliente_admin.get("/pacientes").get_data(as_text=True)
-    historico = html.split("Histórico de atendimentos")[1]
-    assert "Consultório 3" in historico
+    historico = cliente_admin.get("/api/pacientes").get_json()["historico"]
+    assert historico[0]["local"] == "Consultório 3"
 
 
 def test_relatorio_mostra_local_desativado_nos_dias_em_que_atendeu(cliente_admin, criar_paciente):
     dia = date.today()
     criar_paciente("Ana", status="Concluído", local="Consultório 3",
                    chamado_em=datetime.now(), concluido_em=datetime.now())
-    cliente_admin.post(f"/locais/{local('Consultório 3').id}/alternar")
+    alternar(cliente_admin, "Consultório 3")
 
     locais_no_relatorio = [l["local"] for l in relatorio_do_dia(dia)["por_local"]]
 
@@ -111,22 +118,10 @@ def test_relatorio_mostra_local_desativado_nos_dias_em_que_atendeu(cliente_admin
     assert locais_no_relatorio == sorted(locais_no_relatorio)
 
 
-def test_pagina_de_locais_exige_login(cliente_anonimo):
-    assert cliente_anonimo.get("/locais").status_code == 302
-    cliente_anonimo.post("/locais", data={"nome": "Invasor"})
+def test_locais_exigem_login(cliente_anonimo):
+    assert cliente_anonimo.get("/api/locais").status_code == 401
+    adicionar(cliente_anonimo, "Invasor")
     assert Local.query.filter_by(nome="Invasor").first() is None
-
-
-def test_pagina_lista_ativos_e_desativados(cliente_admin):
-    cliente_admin.post(f"/locais/{local('Consultório 2').id}/alternar")
-
-    html = cliente_admin.get("/locais").get_data(as_text=True)
-
-    assert "Desativado" in html and "Reativar" in html
-    # Ativos vêm antes dos desativados (olhando só a tabela: a mensagem
-    # "Local Consultório 2 desativado." aparece antes dela, no topo)
-    tabela = html.split("<tbody>")[1]
-    assert tabela.index("Triagem") < tabela.index("Consultório 2")
 
 
 # ---------- API (React) ----------

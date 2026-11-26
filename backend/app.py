@@ -8,8 +8,7 @@ from pathlib import Path
 
 import click
 from flask import (
-    Flask, abort, flash, jsonify, redirect, render_template, request,
-    send_from_directory, session, url_for,
+    Flask, jsonify, redirect, request, send_from_directory, session,
 )
 
 from flask_login import (
@@ -22,7 +21,9 @@ from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from werkzeug.security import check_password_hash, generate_password_hash, safe_join
 
 
-app = Flask(__name__)
+# static_folder=None: o Flask não serve mais CSS/JS próprios. As telas
+# são do React, entregues em /app/ (veja frontend_react).
+app = Flask(__name__, static_folder=None)
 
 def carregar_chave_secreta(pasta):
     """Devolve a SECRET_KEY, a chave que assina o cookie de login
@@ -73,10 +74,11 @@ db = SQLAlchemy(app)
 # (ex.: adicionar uma coluna) sem perder os dados.
 migrate = Migrate(app, db)
 
-# Proteção contra CSRF: todo formulário POST precisa mandar um código
-# secreto (csrf_token) que só as páginas do próprio Atrial conhecem.
-# Assim, um site malicioso aberto em outra aba não consegue enviar
-# formulários (excluir paciente, chamar próximo...) em seu nome.
+# Proteção contra CSRF: todo pedido que muda algo (POST, PUT, DELETE)
+# precisa mandar um código secreto que só o próprio Atrial conhece (o
+# React o recebe em /api/sessao e manda no cabeçalho X-CSRFToken).
+# Assim, um site malicioso aberto em outra aba não consegue fazer
+# nada (excluir paciente, chamar próximo...) em seu nome.
 #
 # TIME_LIMIT = None: o código vale enquanto a pessoa estiver logada.
 # O padrão (1 hora) daria erro em quem deixa a página aberta o dia
@@ -278,7 +280,7 @@ PRIORIDADES = ["Normal", "Preferencial", "Urgente"]
 STATUS_ENCERRADOS = ["Concluído", "Não compareceu"]
 
 # Para onde os pacientes podem ser chamados (triagem, consultórios...).
-# Cadastrados pela página /locais.
+# Cadastrados pela administração (tela Locais).
 class Local(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(50), nullable=False, unique=True)
@@ -294,22 +296,6 @@ def nomes_dos_locais_ativos():
         local.nome
         for local in Local.query.filter_by(ativo=True).order_by(Local.nome)
     ]
-
-
-@app.context_processor
-def locais_nos_templates():
-    """Tudo que esta função devolve fica disponível em TODOS os templates.
-
-    Antes, LOCAIS era uma lista fixa no código (jinja_env.globals).
-    Agora vem do banco e pode mudar a qualquer momento, então precisa
-    ser lido de novo a cada página. O context_processor faz isso.
-    (Passamos a FUNÇÃO, sem os parênteses: o banco só é consultado
-    se o template chamar locais_ativos().)
-    """
-    return {"locais_ativos": nomes_dos_locais_ativos}
-
-# Deixa a lista disponível em todos os templates
-app.jinja_env.globals["PRIORIDADES"] = PRIORIDADES
 
 
 # ---------- Validação ----------
@@ -341,29 +327,23 @@ def cpf_valido(cpf):
     return True
 
 
-@app.template_filter("cpf")
 def formatar_cpf(cpf):
-    """Filtro do Jinja: {{ paciente.cpf|cpf }} -> 123.456.789-09"""
+    """'12345678909' -> '123.456.789-09'"""
     if len(cpf) != 11:
         return cpf
     return f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
 
 
-@app.template_filter("hora")
 def formatar_hora(momento):
-    """{{ paciente.chegada|hora }} -> 14:32"""
+    """datetime -> '14:32'   (None -> '-')"""
     if momento is None:
         return "-"
     return momento.strftime("%H:%M")
 
 
-@app.template_filter("duracao")
 def formatar_duracao(inicio, fim=None):
-    """Tempo entre dois horários, em texto.
-
-    {{ paciente.chegada|duracao }}                     -> de chegada até agora
-    {{ paciente.chegada|duracao(paciente.chamado_em) }} -> entre os dois
-    """
+    """Tempo entre dois horários, em texto ('15 min').
+    Sem fim: de inicio até agora."""
     if inicio is None:
         return "-"
 
@@ -371,9 +351,8 @@ def formatar_duracao(inicio, fim=None):
     return formatar_minutos((fim - inicio).total_seconds() / 60)
 
 
-@app.template_filter("minutos")
 def formatar_minutos(minutos):
-    """{{ 135|minutos }} -> 2h 15min   (None -> '-')"""
+    """135 -> '2h 15min'   (None -> '-')"""
     if minutos is None:
         return "-"
 
@@ -388,12 +367,10 @@ def formatar_minutos(minutos):
     return f"{horas}h {minutos:02d}min"
 
 
-def ler_formulario(paciente_id=None, origem=None):
+def ler_formulario(origem, paciente_id=None):
     """Lê, limpa e valida os campos do formulário de paciente.
 
-    origem = de onde vêm os campos: o formulário HTML (padrão) ou o
-    JSON que o React mandou. Os dois têm .get(), então a mesma
-    validação serve para as duas telas.
+    origem = o JSON que o React mandou (um dicionário).
 
     Devolve (dados, erros). erros é um dicionário campo -> mensagem
     (ex.: {"cpf": "CPF inválido..."}); vazio = tudo certo. Por campo
@@ -401,9 +378,6 @@ def ler_formulario(paciente_id=None, origem=None):
     Na edição, passe paciente_id para o próprio paciente
     não ser acusado de CPF duplicado.
     """
-    if origem is None:
-        origem = request.form
-
     def campo(nome):
         # str(): no JSON pode vir número ou null; no formulário é sempre texto
         valor = origem.get(nome)
@@ -472,11 +446,6 @@ def acao_editar_paciente(paciente, dados):
     db.session.commit()
 
 
-def mostrar_erros(erros):
-    for erro in erros:
-        flash(erro, "erro")
-
-
 # ---------- Login ----------
 
 login_manager = LoginManager(app)
@@ -512,22 +481,19 @@ def carregar_usuario(id_da_sessao):
 def admin_obrigatorio(rota):
     """Decorador: a rota só abre para quem é da administração.
 
-        @app.route("/locais")
+        @app.get("/api/locais")
         @admin_obrigatorio
-        def locais(): ...
+        def api_locais(): ...
 
-    Um decorador "embrulha" a função da rota: o Python troca locais
-    por permitir(locais), que confere o papel ANTES de chamar a rota.
+    Um decorador "embrulha" a função da rota: o Python troca api_locais
+    por permitir(api_locais), que confere o papel ANTES de chamar a rota.
     (O login em si já foi exigido pelo before_request.)
     """
-    @wraps(rota)  # mantém o nome da função (o Flask usa no url_for)
+    @wraps(rota)  # mantém o nome da função (o Flask usa como nome da rota)
     def permitir(*args, **kwargs):
         if not current_user.admin:
-            if e_pedido_da_api():
-                # 403 = "sei quem você é, mas você não pode"
-                return jsonify(erro="Só a administração pode fazer isso."), 403
-            flash("Só a administração pode acessar essa página.", "erro")
-            return redirect(url_for("pacientes"))
+            # 403 = "sei quem você é, mas você não pode"
+            return jsonify(erro="Só a administração pode fazer isso."), 403
         return rota(*args, **kwargs)
 
     # Uma "etiqueta" na função: os testes procuram todas as rotas
@@ -537,8 +503,7 @@ def admin_obrigatorio(rota):
 
 
 def validar_novo_usuario(login, nome, senha):
-    """Regras para criar usuário (usadas pela página, pela API e pelo
-    comando). Devolve erros por campo (campo -> mensagem); vazio = ok."""
+    """Regras para criar usuário (usadas pela API e pelo comando). Devolve erros por campo (campo -> mensagem); vazio = ok."""
     erros = {}
 
     if not nome:
@@ -572,78 +537,53 @@ def validar_senha(senha, confirmacao=None):
 # Páginas que qualquer um pode ver, sem login.
 # O painel fica na TV da recepção, então não pode pedir senha.
 PAGINAS_PUBLICAS = {
-    "login", "static", "painel", "painel_dados",
+    "painel_dados",
     # API do React: ver se está logado e fazer o login
     "api_sessao", "api_login",
     # Os arquivos do React (HTML, JS, CSS) não têm dados: quem pede
     # login é o próprio React, perguntando à API
     "frontend_react",
+    # Endereços antigos (/pacientes, /painel...): só redirecionam para /app/
+    "endereco_antigo",
 }
 
 # O que quem está com senha provisória ainda pode usar
-LIBERADAS_COM_SENHA_PROVISORIA = {
-    "minha_senha", "logout", "api_sessao", "api_logout", "api_minha_senha",
-}
-
-
-def e_pedido_da_api():
-    return request.path.startswith("/api/")
+LIBERADAS_COM_SENHA_PROVISORIA = {"api_sessao", "api_logout", "api_minha_senha"}
 
 
 @app.before_request
 def exigir_login():
-    """Roda ANTES de toda rota. Quem não entrou vai para o login.
+    """Roda ANTES de toda rota. Sem login, só as PAGINAS_PUBLICAS abrem.
 
     Proteger tudo por padrão é mais seguro do que marcar rota por rota:
     uma rota nova já nasce protegida, mesmo que alguém esqueça.
 
-    Para a API (React) a resposta é JSON com o código HTTP certo, em
-    vez de redirecionar para uma página HTML que o React não usaria.
+    A resposta é JSON com o código HTTP certo: quem decide qual tela
+    mostrar (login, troca de senha) é o React.
     """
     if request.endpoint in PAGINAS_PUBLICAS:
         return None  # pode seguir para a rota
+
+    if request.endpoint is None:
+        return None  # endereço que não existe: segue para o 404 normal
 
     if current_user.is_authenticated:
         # Senha provisória (dada pela administração)? Até criar a própria,
         # a pessoa só consegue trocar a senha ou sair.
         if current_user.trocar_senha and request.endpoint not in LIBERADAS_COM_SENHA_PROVISORIA:
-            if e_pedido_da_api():
-                return jsonify(erro="Crie uma senha sua para continuar.", trocar_senha=True), 403
-            flash("Crie uma senha sua para continuar.", "erro")
-            return redirect(url_for("minha_senha"))
+            return jsonify(erro="Crie uma senha sua para continuar.", trocar_senha=True), 403
         return None
 
-    if e_pedido_da_api():
-        # 401 = "não autenticado": o React mostra a tela de login
-        return jsonify(erro="Faça login para continuar."), 401
-
-    # Guarda para onde a pessoa queria ir, para mandá-la de volta depois.
-    # (full_path inclui o ?q=..., mas deixa um "?" sobrando quando não há)
-    proxima = request.full_path if request.query_string else request.path
-    return redirect(url_for("login", proxima=proxima))
-
-
-def endereco_seguro(endereco):
-    """Só aceita endereços DESTE site ('/pacientes'), nunca de outro.
-
-    Sem isso, alguém poderia mandar um link como
-    /login?proxima=https://site-falso.com, e depois de digitar a senha
-    a pessoa cairia num site falso achando que ainda está no Atrial.
-    """
-    return (
-        bool(endereco)
-        and endereco.startswith("/")
-        and not endereco.startswith("//")   # //site.com também é outro site
-        and "\\" not in endereco             # alguns navegadores leem \ como /
-    )
+    # 401 = "não autenticado": o React mostra a tela de login
+    return jsonify(erro="Faça login para continuar."), 401
 
 
 def autenticar(login_digitado, senha):
     """Confere login e senha, com todas as proteções. Devolve
     (usuario, None) se deu certo ou (None, mensagem_de_erro).
 
-    Usada pela página de login (HTML) E pela API do React: as duas
-    portas de entrada passam pelas mesmas regras.
+    Usada pela API (/api/login). Fica separada da rota para as regras
+    de segurança poderem ser lidas (e testadas) sozinhas.
     """
     tentativa = db.session.get(TentativaLogin, login_digitado)
 
@@ -696,38 +636,6 @@ def login_digitado_do(texto):
     return (texto or "").strip().lower()[:50]
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-
-    if current_user.is_authenticated:
-        return redirect(url_for("pacientes"))
-
-    proxima = request.args.get("proxima", "")
-
-    if request.method == "POST":
-        login_digitado = login_digitado_do(request.form.get("login"))
-        usuario, erro = autenticar(login_digitado, request.form.get("senha", ""))
-
-        if erro:
-            flash(erro, "erro")
-            return render_template("login.html", login=login_digitado, proxima=proxima)
-
-        login_user(usuario)
-        flash(f"Olá, {usuario.nome}!", "sucesso")
-        return redirect(proxima if endereco_seguro(proxima) else url_for("pacientes"))
-
-    return render_template("login.html", login="", proxima=proxima)
-
-
-# POST (e não um link comum) para que outro site não consiga
-# deslogar alguém só colocando uma imagem apontando para /logout
-@app.route("/logout", methods=["POST"])
-def logout():
-    logout_user()
-    flash("Você saiu do sistema.", "sucesso")
-    return redirect(url_for("login"))
-
-
 @app.cli.command("criar-usuario")
 @click.argument("login")
 @click.option("--nome", prompt="Nome de quem vai usar")
@@ -760,46 +668,16 @@ def criar_usuario(login, nome, senha, admin):
 
 @app.errorhandler(CSRFError)
 def erro_csrf(erro):
-    """Formulário chegou sem o código ou com um código inválido.
+    """Pedido sem o código CSRF ou com um código inválido.
 
     Na prática quase sempre é inofensivo (ex.: a pessoa saiu e entrou
     de novo em outra aba, e a página antiga ficou com o código velho).
-    Em vez da página de erro 400 do Flask, explicamos e recomeçamos.
+    Em vez da página de erro 400 do Flask, uma mensagem que o React mostra.
     """
-    if e_pedido_da_api():
-        return jsonify(erro="Sessão desatualizada. Recarregue a página."), 400
-
-    flash("A página estava desatualizada. Confira e tente de novo.", "erro")
-    return redirect(url_for("pacientes"))
+    return jsonify(erro="Sessão desatualizada. Recarregue a página."), 400
 
 
-# ---------- Rotas ----------
-
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-
-@app.route("/pacientes/novo", methods=["GET", "POST"])
-def cadastro_paciente():
-
-    if request.method == "POST":
-
-        dados, erros = ler_formulario()
-
-        if erros:
-            mostrar_erros(erros.values())
-            # Mostra o formulário de novo, com o que já foi digitado
-            return render_template("cadastros.html", dados=dados)
-
-        paciente = acao_cadastrar_paciente(dados)
-
-        flash(f"Paciente {paciente.nome} cadastrado com sucesso!", "sucesso")
-
-        return redirect(url_for("pacientes"))
-
-    return render_template("cadastros.html", dados={})
-
+# ---------- Fila de pacientes ----------
 
 def buscar_por_status(status):
     """Pacientes com o status informado, na ordem da fila:
@@ -841,25 +719,8 @@ def filtrar_busca(consulta, termo):
     return consulta.filter(db.or_(*condicoes))
 
 
-@app.route("/pacientes")
-def pacientes():
-
-    # ?q=... na URL (vem do campo de busca)
-    termo = request.args.get("q", "").strip()
-    listas = listas_de_pacientes(termo)
-
-    # ?parcial=1: o JavaScript da página só quer as listas atualizadas,
-    # sem cabeçalho, menu etc. (veja _listas_pacientes.html)
-    if request.args.get("parcial"):
-        template = "_listas_pacientes.html"
-    else:
-        template = "pacientes.html"
-
-    return render_template(template, termo=termo, **listas)
-
-
 def listas_de_pacientes(termo):
-    """As três listas da tela de pacientes (usadas pelo HTML e pela API)."""
+    """As três listas da tela de pacientes (usadas pela API)."""
     # A posição na fila vem da fila COMPLETA: se a busca esconder
     # alguém, quem sobrou não pode "subir" de posição.
     posicoes = {
@@ -988,80 +849,9 @@ def locais_do_relatorio(concluidos):
 
 def horas_do_grafico(por_hora):
     """As horas do eixo: pelo menos o horário comercial (7h às 18h),
-    e mais se houve movimento fora dele. Usada pelo Flask e pela API."""
+    e mais se houve movimento fora dele. O React desenha o gráfico
+    com estas horas (todas, inclusive as sem ninguém)."""
     return list(range(min(7, *por_hora), max(18, *por_hora) + 1))
-
-
-def grafico_por_hora(por_hora):
-    """Calcula o desenho (em SVG) do gráfico de chegadas por hora.
-
-    Devolve as medidas prontas; o template só desenha. Fazer a
-    conta aqui deixa o template simples e permite testar.
-    """
-    if not por_hora:
-        return None
-
-    horas = horas_do_grafico(por_hora)
-
-    largura, altura = 720, 240
-    esquerda, direita, topo, base = 36, 8, 12, 28
-    area_l = largura - esquerda - direita
-    area_a = altura - topo - base
-
-    # Topo do eixo: um número "redondo" com no máximo ~5 marcas
-    maior = max(por_hora.values())
-    passo = next(p for p in (1, 2, 5, 10, 20, 50, 100) if maior / p <= 5)
-    topo_eixo = -(-maior // passo) * passo  # arredonda para cima
-
-    def y(valor):
-        return topo + area_a - valor / topo_eixo * area_a
-
-    coluna = area_l / len(horas)
-    barra_l = min(coluna * 0.6, 32)  # barras finas
-
-    barras = []
-    for i, hora in enumerate(horas):
-        total = por_hora.get(hora, 0)
-        x = esquerda + i * coluna + (coluna - barra_l) / 2
-        barras.append({
-            "hora": hora,
-            "total": total,
-            "x": round(x, 1),
-            "largura": round(barra_l, 1),
-            "caminho": caminho_barra(x, y(total), barra_l, y(0)) if total else None,
-            # Área de passar o mouse: a coluna inteira, maior que a barra
-            "alvo_x": round(esquerda + i * coluna, 1),
-            "alvo_largura": round(coluna, 1),
-            "centro": round(esquerda + i * coluna + coluna / 2, 1),
-        })
-
-    return {
-        "largura": largura,
-        "altura": altura,
-        "esquerda": esquerda,
-        "direita": largura - direita,
-        "topo": topo,
-        "chao": y(0),
-        "marcas": [
-            {"valor": v, "y": round(y(v), 1)}
-            for v in range(0, topo_eixo + 1, passo)
-        ],
-        "barras": barras,
-    }
-
-
-def caminho_barra(x, y_topo, largura, y_chao):
-    """Contorno de uma barra com só os cantos de CIMA arredondados
-    (a base fica reta, "apoiada" no eixo)."""
-    r = min(4, largura / 2, y_chao - y_topo)
-    return (
-        f"M{x:.1f},{y_chao:.1f} "
-        f"V{y_topo + r:.1f} "
-        f"Q{x:.1f},{y_topo:.1f} {x + r:.1f},{y_topo:.1f} "
-        f"H{x + largura - r:.1f} "
-        f"Q{x + largura:.1f},{y_topo:.1f} {x + largura:.1f},{y_topo + r:.1f} "
-        f"V{y_chao:.1f} Z"
-    )
 
 
 def dia_do_pedido():
@@ -1070,21 +860,6 @@ def dia_do_pedido():
         return date.fromisoformat(request.args.get("dia", ""))
     except ValueError:
         return date.today()
-
-
-@app.route("/relatorio")
-def relatorio():
-    dia = dia_do_pedido()
-    dados = relatorio_do_dia(dia)
-
-    return render_template(
-        "relatorio.html",
-        dados=dados,
-        grafico=grafico_por_hora(dados["por_hora"]),
-        anterior=dia - timedelta(days=1),
-        seguinte=dia + timedelta(days=1),
-        hoje=date.today(),
-    )
 
 
 # ---------- Painel de chamada (TV da recepção) ----------
@@ -1133,45 +908,17 @@ def dados_do_painel():
     }
 
 
-@app.route("/painel")
-def painel():
-    # A página já vem preenchida; depois o JavaScript só atualiza
-    return render_template("painel.html", dados=dados_do_painel())
-
-
-@app.route("/painel/dados")
+# Pública: a TV não faz login. Mostra só primeiro nome + inicial.
+@app.get("/painel/dados")
 def painel_dados():
     # Um dicionário devolvido por uma rota vira JSON automaticamente
     return dados_do_painel()
 
 
-@app.route("/pacientes/editar/<int:id>", methods=["GET", "POST"])
-def editar_paciente(id):
-
-    paciente = db.get_or_404(Paciente, id)
-
-    if request.method == "POST":
-
-        dados, erros = ler_formulario(paciente_id=id)
-
-        if erros:
-            mostrar_erros(erros.values())
-            return render_template("editar_paciente.html", dados=dados)
-
-        acao_editar_paciente(paciente, dados)
-
-        flash(f"Dados de {paciente.nome} atualizados.", "sucesso")
-
-        return redirect(url_for("pacientes"))
-
-    # No GET, o formulário começa preenchido com os dados do banco
-    return render_template("editar_paciente.html", dados=paciente)
-
-
 # ---------- Ações de atendimento ----------
-# Cada ação é uma função que devolve (deu_certo, mensagem). Quem chama
-# decide o que fazer com isso: as rotas HTML viram flash + redirect;
-# a API (React) vira JSON. As REGRAS ficam num lugar só.
+# Cada ação é uma função que devolve (deu_certo, mensagem); a API
+# transforma isso em JSON (resposta_da_acao). Separar a REGRA da rota
+# deixa a regra fácil de ler e de testar.
 
 def acao_chamar_proximo(local):
     if local not in nomes_dos_locais_ativos():
@@ -1233,42 +980,6 @@ def acao_nao_compareceu(paciente):
     return True, f"{paciente.nome} marcado como não compareceu."
 
 
-def responder_com_flash(resultado):
-    """Rotas HTML: mostra a mensagem e volta para a lista."""
-    deu_certo, mensagem = resultado
-    flash(mensagem, "sucesso" if deu_certo else "erro")
-    return redirect(url_for("pacientes"))
-
-
-@app.route("/pacientes/chamar-proximo", methods=["POST"])
-def chamar_proximo():
-    return responder_com_flash(acao_chamar_proximo(request.form.get("local", "")))
-
-
-@app.route("/pacientes/chamar-de-novo/<int:id>", methods=["POST"])
-def chamar_de_novo(id):
-    return responder_com_flash(acao_chamar_de_novo(db.get_or_404(Paciente, id)))
-
-
-@app.route("/pacientes/finalizar/<int:id>", methods=["POST"])
-def finalizar_atendimento(id):
-    return responder_com_flash(acao_concluir(db.get_or_404(Paciente, id)))
-
-
-@app.route("/pacientes/nao-compareceu/<int:id>", methods=["POST"])
-def nao_compareceu(id):
-    return responder_com_flash(acao_nao_compareceu(db.get_or_404(Paciente, id)))
-
-
-@app.route("/pacientes/excluir/<int:id>", methods=["POST"])
-def excluir_paciente(id):
-    paciente = db.get_or_404(Paciente, id)
-
-    flash(acao_excluir_paciente(paciente), "sucesso")
-
-    return redirect(url_for("pacientes"))
-
-
 # ---------- Locais (cadastro) ----------
 
 def lista_de_locais():
@@ -1278,7 +989,7 @@ def lista_de_locais():
 
 def validar_nome_de_local(texto, local_id=None):
     """Limpa e confere o nome de um local. Devolve (nome, erro); erro
-    None = pode usar. Usada pela página Flask e pela API.
+    None = pode usar.
 
     Ao RENOMEAR, passe local_id: o próprio local não conta como
     repetido (assim dá para corrigir "triagem" para "Triagem")."""
@@ -1337,60 +1048,7 @@ def acao_alternar_local(local):
     return True, f"Local \"{local.nome}\" {situacao}."
 
 
-@app.route("/locais", methods=["GET", "POST"])
-@admin_obrigatorio
-def locais():
-
-    if request.method == "POST":
-        nome, erro = validar_nome_de_local(request.form.get("nome", ""))
-
-        if erro:
-            flash(erro, "erro")
-        else:
-            flash(acao_adicionar_local(nome), "sucesso")
-
-        return redirect(url_for("locais"))
-
-    return render_template("locais.html", locais=lista_de_locais())
-
-
-@app.route("/locais/<int:id>/alternar", methods=["POST"])
-@admin_obrigatorio
-def alternar_local(id):
-    """Desativa um local ativo, ou reativa um desativado."""
-    deu_certo, mensagem = acao_alternar_local(db.get_or_404(Local, id))
-    flash(mensagem, "sucesso" if deu_certo else "erro")
-    return redirect(url_for("locais"))
-
-
 # ---------- Usuários (só administração) ----------
-
-@app.route("/usuarios", methods=["GET", "POST"])
-@admin_obrigatorio
-def usuarios():
-
-    if request.method == "POST":
-        login = request.form.get("login", "").strip().lower()
-        nome = request.form.get("nome", "").strip()
-        senha = request.form.get("senha", "")
-        # Caixa de seleção: só vem no formulário quando está marcada
-        admin = request.form.get("admin") == "sim"
-
-        erros = validar_novo_usuario(login, nome, senha)
-
-        if erros:
-            mostrar_erros(erros.values())
-            # Devolve o que foi digitado (MENOS a senha, por segurança)
-            return render_template(
-                "usuarios.html", usuarios=lista_de_usuarios(),
-                dados={"login": login, "nome": nome, "admin": admin},
-            )
-
-        flash(acao_criar_usuario(nome, login, senha, admin), "sucesso")
-        return redirect(url_for("usuarios"))
-
-    return render_template("usuarios.html", usuarios=lista_de_usuarios(), dados={})
-
 
 def acao_criar_usuario(nome, login, senha, admin):
     """Cria o usuário (já validado). Devolve a mensagem de confirmação."""
@@ -1408,20 +1066,6 @@ def acao_criar_usuario(nome, login, senha, admin):
 def lista_de_usuarios():
     # Ativos primeiro; depois por nome
     return Usuario.query.order_by(Usuario.ativo.desc(), Usuario.nome).all()
-
-
-@app.route("/usuarios/<int:id>/<acao>", methods=["POST"])
-@admin_obrigatorio
-def alterar_usuario(id, acao):
-    """acao: 'ativo' (desativa/reativa) ou 'admin' (troca o papel)."""
-    usuario = db.get_or_404(Usuario, id)
-
-    if acao not in ("ativo", "admin"):
-        abort(404)
-
-    deu_certo, mensagem = acao_alterar_usuario(usuario, acao)
-    flash(mensagem, "sucesso" if deu_certo else "erro")
-    return redirect(url_for("usuarios"))
 
 
 def acao_alterar_usuario(usuario, acao):
@@ -1456,8 +1100,7 @@ def acao_alterar_usuario(usuario, acao):
 
 def erros_da_troca_de_senha(atual, nova, confirmacao):
     """Confere a troca da PRÓPRIA senha. Devolve erros por campo
-    (dicionário campo -> mensagem, como em ler_formulario); vazio = ok.
-    Usada pela página Flask e pela API."""
+    (dicionário campo -> mensagem, como em ler_formulario); vazio = ok."""
     erros = {}
     # Pedir a senha atual protege quem deixou o computador logado:
     # quem sentar ali não consegue trocar a senha e "roubar" a conta.
@@ -1483,28 +1126,6 @@ def acao_trocar_minha_senha(nova):
     login_user(current_user._get_current_object())
 
 
-@app.route("/minha-senha", methods=["GET", "POST"])
-def minha_senha():
-    """Qualquer pessoa logada troca a PRÓPRIA senha."""
-
-    if request.method == "POST":
-        nova = request.form.get("nova", "")
-        erros = erros_da_troca_de_senha(
-            request.form.get("atual", ""), nova, request.form.get("confirmacao", "")
-        )
-
-        if erros:
-            mostrar_erros(erros.values())
-            return render_template("minha_senha.html")
-
-        acao_trocar_minha_senha(nova)
-
-        flash("Senha alterada.", "sucesso")
-        return redirect(url_for("pacientes"))
-
-    return render_template("minha_senha.html")
-
-
 def acao_redefinir_senha(usuario, nova):
     """Senha PROVISÓRIA (já validada) para quem esqueceu a sua."""
     usuario.definir_senha(nova)  # também derruba as sessões dela
@@ -1516,36 +1137,33 @@ def acao_redefinir_senha(usuario, nova):
     )
 
 
-@app.route("/usuarios/<int:id>/senha", methods=["GET", "POST"])
-@admin_obrigatorio
-def redefinir_senha(id):
-    """A administração dá uma senha PROVISÓRIA para quem esqueceu a sua."""
-    usuario = db.get_or_404(Usuario, id)
-
-    if usuario.id == current_user.id:
-        # Para a própria senha existe "Minha senha" (que pede a atual)
-        return redirect(url_for("minha_senha"))
-
-    if request.method == "POST":
-        nova = request.form.get("nova", "")
-        erros = validar_senha(nova)
-
-        if erros:
-            mostrar_erros(erros)
-            return render_template("redefinir_senha.html", usuario=usuario)
-
-        flash(acao_redefinir_senha(usuario, nova), "sucesso")
-        return redirect(url_for("usuarios"))
-
-    return render_template("redefinir_senha.html", usuario=usuario)
-
-
 # ---------- React pronto, servido pelo Flask ----------
 #
-# No desenvolvimento, o React roda no Vite (npm run dev, porta 5173).
+# As telas do sistema são todas em React (pasta frontend/). No
+# desenvolvimento, o React roda no Vite (npm run dev, porta 5173).
 # Para USAR o sistema, não precisa do Vite: "npm run build" gera os
 # arquivos prontos em frontend/dist/, e o Flask os entrega aqui, em
 # /app/... Um servidor só, uma porta só.
+
+# As páginas antigas (feitas em Flask, com templates) foram
+# aposentadas. Os endereços delas continuam funcionando e levam para a
+# tela equivalente do React: um favorito antigo (como o /painel da
+# TV) não quebra.
+@app.get("/", defaults={"caminho": ""})
+@app.get("/<any(pacientes, relatorio, painel, locais, usuarios, login):caminho>")
+@app.get("/pacientes/novo", defaults={"caminho": "pacientes/novo"})
+@app.get("/minha-senha", defaults={"caminho": "minha-senha"})
+@app.get("/pacientes/editar/<int:id>", defaults={"caminho": "editar"})
+def endereco_antigo(caminho, id=None):
+    if caminho == "login":
+        caminho = "pacientes"  # /login não existe no React: as telas pedem login sozinhas
+    elif caminho == "editar":
+        caminho = f"pacientes/{id}/editar"  # no React o id vem antes
+    destino = "/app/" + caminho
+    if request.query_string:  # mantém o ?q=... / ?dia=...
+        destino += "?" + request.query_string.decode()
+    return redirect(destino)
+
 
 @app.get("/app/", defaults={"caminho": ""})
 @app.get("/app/<path:caminho>")
@@ -1582,13 +1200,12 @@ def frontend_react(caminho):
 
 # ---------- API JSON (usada pelo frontend em React) ----------
 #
-# As mesmas regras das páginas HTML, mas respondendo com DADOS (JSON)
-# em vez de páginas prontas. Quem desenha a tela é o React.
+# O Flask responde com DADOS (JSON), e quem desenha a tela é o React.
 #
-# - Login: o mesmo cookie de sessão do Flask (o Vite faz o React e o
-#   Flask parecerem um site só, então o navegador manda o cookie).
+# - Login: o cookie de sessão do Flask. O React vem do mesmo endereço
+#   (/app/, ou o Vite no desenvolvimento), então o navegador manda o cookie.
 # - CSRF: o React pega o código em /api/sessao e manda de volta no
-#   cabeçalho X-CSRFToken de todo POST (o Flask-WTF confere sozinho).
+#   cabeçalho X-CSRFToken de todo POST/PUT/DELETE (o Flask-WTF confere).
 # - Erros: código HTTP + {"erro": "mensagem"}.
 
 def usuario_json(usuario):
@@ -1653,7 +1270,7 @@ def api_login():
     dados = request.get_json(silent=True) or {}
     login_digitado = login_digitado_do(dados.get("login"))
 
-    # As MESMAS regras da página de login (bloqueio, tempo igual...)
+    # Todas as regras de segurança ficam em autenticar() (bloqueio, tempo igual...)
     usuario, erro = autenticar(login_digitado, str(dados.get("senha", "")))
     if erro:
         return jsonify(erro=erro), 401
@@ -1743,7 +1360,7 @@ def api_prioridades():
 
 @app.post("/api/pacientes")
 def api_cadastrar_paciente():
-    dados, erros = ler_formulario(origem=request.get_json(silent=True) or {})
+    dados, erros = ler_formulario(request.get_json(silent=True) or {})
     if erros:
         return erros_de_validacao(erros)
 
@@ -1770,7 +1387,7 @@ def api_editar_paciente(id):
     if paciente is None:
         return jsonify(erro="Paciente não encontrado."), 404
 
-    dados, erros = ler_formulario(paciente_id=id, origem=request.get_json(silent=True) or {})
+    dados, erros = ler_formulario(request.get_json(silent=True) or {}, paciente_id=id)
     if erros:
         return erros_de_validacao(erros)
 
@@ -1795,10 +1412,9 @@ def api_excluir_paciente(id):
 
 @app.get("/api/relatorio")
 def api_relatorio():
-    """Os números do dia. Diferente da página Flask, o desenho do
-    gráfico NÃO vem pronto: vão só os dados (hora, total) e o React
-    calcula as barras. Os tempos vão formatados ("12 min"), como em
-    paciente_json, para ficarem iguais nas duas versões."""
+    """Os números do dia. O desenho do gráfico NÃO vai pronto: vão só
+    os dados (hora, total) e o React calcula as barras. Os tempos vão
+    formatados ("12 min"), como em paciente_json."""
     dia = dia_do_pedido()
     dados = relatorio_do_dia(dia)
     por_hora = dados["por_hora"]

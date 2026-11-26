@@ -31,7 +31,7 @@ def relogio(monkeypatch):
 
 
 def entrar(navegador, login="ana", senha=SENHA_TESTE):
-    return navegador.post("/login", data={"login": login, "senha": senha})
+    return navegador.post("/api/login", json={"login": login, "senha": senha})
 
 
 def errar(navegador, vezes, login="ana"):
@@ -40,7 +40,11 @@ def errar(navegador, vezes, login="ana"):
 
 
 def entrou(resposta):
-    return resposta.status_code == 302 and resposta.location == "/pacientes"
+    return resposta.status_code == 200
+
+
+def erro(resposta):
+    return resposta.get_json()["erro"]
 
 
 # ---------- Bloqueio ----------
@@ -57,7 +61,7 @@ def test_muitos_erros_bloqueiam_ate_a_senha_certa(cliente_anonimo, usuario, relo
     resposta = entrar(cliente_anonimo)  # senha CERTA, mas está bloqueado
 
     assert not entrou(resposta)
-    assert "Tente de novo em 15 min" in resposta.get_data(as_text=True)
+    assert "Tente de novo em 15 min" in erro(resposta)
 
 
 def test_bloqueio_mostra_os_minutos_que_faltam(cliente_anonimo, usuario, relogio):
@@ -66,7 +70,7 @@ def test_bloqueio_mostra_os_minutos_que_faltam(cliente_anonimo, usuario, relogio
 
     resposta = entrar(cliente_anonimo)
 
-    assert "Tente de novo em 5 min" in resposta.get_data(as_text=True)
+    assert "Tente de novo em 5 min" in erro(resposta)
 
 
 def test_depois_do_bloqueio_volta_a_entrar(cliente_anonimo, usuario, relogio):
@@ -91,7 +95,7 @@ def test_durante_o_bloqueio_a_senha_nem_e_conferida(cliente_anonimo, usuario, re
 def test_acertar_zera_os_erros(cliente_anonimo, usuario, relogio):
     errar(cliente_anonimo, LIMITE_DE_ERROS - 1)
     entrar(cliente_anonimo)          # acertou: zera
-    cliente_anonimo.post("/logout")
+    cliente_anonimo.post("/api/logout")
 
     errar(cliente_anonimo, LIMITE_DE_ERROS - 1)  # de novo 4: ainda não bloqueia
 
@@ -129,7 +133,7 @@ def test_login_inexistente_tambem_e_bloqueado(cliente_anonimo, relogio):
 
     # Mesma resposta de uma conta real bloqueada: o bloqueio não
     # serve para descobrir se o login existe
-    assert "Muitas tentativas" in resposta.get_data(as_text=True)
+    assert "Muitas tentativas" in erro(resposta)
 
 
 def test_login_inexistente_demora_o_mesmo_que_um_real(cliente_anonimo, monkeypatch, relogio):
@@ -150,7 +154,7 @@ def test_login_inexistente_demora_o_mesmo_que_um_real(cliente_anonimo, monkeypat
 def test_login_gigante_nao_quebra(cliente_anonimo, relogio):
     resposta = entrar(cliente_anonimo, login="a" * 10_000, senha="x")
 
-    assert resposta.status_code == 200
+    assert resposta.status_code == 401  # recusado normalmente, sem erro 500
     assert len(TentativaLogin.query.one().login) == 50
 
 

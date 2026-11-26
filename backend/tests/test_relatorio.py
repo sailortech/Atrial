@@ -1,10 +1,10 @@
-"""Testes do relatório do dia: as contas e o desenho do gráfico."""
+"""Testes do relatório do dia: as contas e as horas do gráfico."""
 
 from datetime import date, datetime
 
 import pytest
 
-from app import formatar_minutos, grafico_por_hora, relatorio_do_dia
+from app import formatar_minutos, horas_do_grafico, relatorio_do_dia
 
 DIA = date(2026, 11, 18)
 
@@ -87,64 +87,18 @@ def test_pacientes_antigos_sem_horario_nao_quebram(criar_paciente):
     assert relatorio_do_dia(DIA)["chegaram"] == 0
 
 
-# ---------- Gráfico ----------
+# ---------- Horas do gráfico ----------
+# O desenho (barras, eixo) é feito pelo React e testado lá
+# (frontend/src/componentes/relatorio/escala.test.js). Aqui: QUAIS horas.
 
-def test_grafico_vazio():
-    assert grafico_por_hora({}) is None
+def test_dia_normal_mostra_o_horario_comercial():
+    assert horas_do_grafico({9: 2, 14: 1}) == list(range(7, 19))  # 7h às 18h
 
 
-def test_grafico_cobre_o_horario_comercial_e_o_que_passar_dele():
-    horas = [b["hora"] for b in grafico_por_hora({6: 1, 20: 2})["barras"]]
+def test_grafico_cobre_o_que_passar_do_horario_comercial():
+    horas = horas_do_grafico({6: 1, 20: 2})
 
-    assert horas[0] == 6 and horas[-1] == 20
     assert horas == list(range(6, 21))  # sem buracos
-
-
-def test_barra_mais_alta_encosta_no_topo_do_eixo():
-    grafico = grafico_por_hora({9: 4, 10: 2})
-
-    topo_eixo = grafico["marcas"][-1]
-    assert topo_eixo["valor"] == 4
-    assert topo_eixo["y"] == grafico["topo"]
-
-
-@pytest.mark.parametrize("maior, ultima_marca", [(3, 3), (7, 8), (23, 25), (48, 50)])
-def test_eixo_usa_numeros_redondos(maior, ultima_marca):
-    marcas = [m["valor"] for m in grafico_por_hora({9: maior})["marcas"]]
-
-    assert marcas[-1] == ultima_marca
-    assert len(marcas) <= 6  # 0 + no máximo 5 marcas
-
-
-def test_hora_sem_chegadas_nao_desenha_barra():
-    barras = {b["hora"]: b for b in grafico_por_hora({9: 2})["barras"]}
-
-    assert barras[9]["caminho"] is not None
-    assert barras[10]["caminho"] is None
-
-
-# ---------- Página ----------
-
-def test_pagina_do_relatorio(cliente, dia_movimentado):
-    html = cliente.get("/relatorio?dia=2026-11-18").get_data(as_text=True)
-
-    assert "Chegadas por hora" in html
-    assert "<svg" in html
-    assert "20 min" in html  # espera média: (20 + 5 + 35) / 3
-
-
-def test_dia_sem_movimento(cliente):
-    html = cliente.get("/relatorio?dia=2020-01-01").get_data(as_text=True)
-
-    assert "Nenhuma chegada registrada" in html
-
-
-def test_dia_invalido_mostra_hoje(cliente):
-    assert cliente.get("/relatorio?dia=banana").status_code == 200
-
-
-def test_relatorio_exige_login(cliente_anonimo):
-    assert cliente_anonimo.get("/relatorio").status_code == 302
 
 
 def test_formatar_minutos():

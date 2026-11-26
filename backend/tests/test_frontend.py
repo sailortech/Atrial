@@ -72,3 +72,32 @@ def test_sem_build_explica_o_que_fazer(cliente_anonimo, app, tmp_path):
 def test_api_continua_exigindo_login(cliente_anonimo, dist):
     # Servir o React sem login não abre os DADOS: a API continua fechada
     assert cliente_anonimo.get("/api/pacientes").status_code == 401
+
+
+# ---------- Endereços antigos (das páginas Flask aposentadas) ----------
+
+@pytest.mark.parametrize("antigo, novo", [
+    ("/", "/app/"),
+    ("/painel", "/app/painel"),              # o favorito da TV continua valendo
+    ("/pacientes", "/app/pacientes"),
+    ("/pacientes?q=ana", "/app/pacientes?q=ana"),
+    ("/pacientes/novo", "/app/pacientes/novo"),
+    ("/relatorio?dia=2026-11-18", "/app/relatorio?dia=2026-11-18"),
+    ("/locais", "/app/locais"),
+    ("/usuarios", "/app/usuarios"),
+    ("/minha-senha", "/app/minha-senha"),
+    ("/login", "/app/pacientes"),            # o React pede login sozinho
+    ("/pacientes/editar/7", "/app/pacientes/7/editar"),
+])
+def test_enderecos_antigos_levam_ao_react(cliente_anonimo, antigo, novo):
+    resposta = cliente_anonimo.get(antigo)
+
+    assert resposta.status_code == 302
+    assert resposta.location == novo
+
+
+@pytest.mark.parametrize("endereco", ["/qualquer-coisa", "/api/nao-existe"])
+def test_endereco_desconhecido_da_404(cliente_anonimo, endereco):
+    """Não existe = 404, e não "faça login" (o que daria a entender que
+    existe algo ali atrás do login)."""
+    assert cliente_anonimo.get(endereco).status_code == 404

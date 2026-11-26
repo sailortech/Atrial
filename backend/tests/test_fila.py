@@ -1,5 +1,5 @@
 """Testes com banco e rotas: ordem da fila, fluxo de status,
-cadastro, busca e painel."""
+cadastro, busca e painel (tudo pela API, como o React usa)."""
 
 from datetime import datetime, timedelta
 
@@ -10,6 +10,18 @@ from app import Paciente, buscar_por_status, db
 
 def nomes(pacientes):
     return [p.nome for p in pacientes]
+
+
+def chamar(cliente, local="Triagem"):
+    return cliente.post("/api/pacientes/chamar-proximo", json={"local": local})
+
+
+def listas(cliente, termo=""):
+    return cliente.get(f"/api/pacientes?q={termo}").get_json()
+
+
+def nomes_em(lista):
+    return [p["nome"] for p in lista]
 
 
 # ---------- Ordem da fila ----------
@@ -37,7 +49,7 @@ def test_chamar_proximo_pega_o_mais_prioritario(cliente, criar_paciente):
     criar_paciente("Ana")
     criar_paciente("Bruno", prioridade="Urgente")
 
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
+    chamar(cliente)
 
     bruno = Paciente.query.filter_by(nome="Bruno").one()
     assert bruno.status == "Em atendimento"
@@ -46,16 +58,17 @@ def test_chamar_proximo_pega_o_mais_prioritario(cliente, criar_paciente):
 
 
 def test_chamar_proximo_com_fila_vazia_avisa(cliente):
-    resposta = cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"}, follow_redirects=True)
+    resposta = chamar(cliente)
 
-    assert "Não há pacientes aguardando" in resposta.get_data(as_text=True)
+    assert resposta.status_code == 409
+    assert "Não há pacientes aguardando" in resposta.get_json()["erro"]
 
 
 def test_fluxo_completo_aguardando_atendimento_concluido(cliente, criar_paciente):
     paciente = criar_paciente("Ana")
 
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
-    cliente.post(f"/pacientes/finalizar/{paciente.id}")
+    chamar(cliente)
+    cliente.post(f"/api/pacientes/{paciente.id}/concluir")
 
     db.session.refresh(paciente)  # relê do banco o que as rotas mudaram
     assert paciente.status == "Concluído"
@@ -65,8 +78,9 @@ def test_fluxo_completo_aguardando_atendimento_concluido(cliente, criar_paciente
 def test_nao_finaliza_quem_ainda_esta_na_fila(cliente, criar_paciente):
     paciente = criar_paciente("Ana")
 
-    cliente.post(f"/pacientes/finalizar/{paciente.id}")
+    resposta = cliente.post(f"/api/pacientes/{paciente.id}/concluir")
 
+    assert resposta.status_code == 409
     db.session.refresh(paciente)
     assert paciente.status == "Aguardando"
     assert paciente.concluido_em is None
@@ -86,60 +100,55 @@ def formulario(**campos):
 
 
 def test_cadastro_valido_entra_na_fila(cliente):
-    resposta = cliente.post("/pacientes/novo", data=formulario())
+    resposta = cliente.post("/api/pacientes", json=formulario())
 
-    assert resposta.status_code == 302  # redirecionou para /pacientes
+    assert resposta.status_code == 201
     paciente = Paciente.query.one()
     assert paciente.cpf == "52998224725"  # salvo só com os dígitos
     assert paciente.status == "Aguardando"
     assert paciente.chegada is not None
 
 
-def test_cadastro_com_cpf_invalido_e_recusado(cliente):
-    resposta = cliente.post("/pacientes/novo", data=formulario(cpf="123.456.789-00"))
+@pytest.mark.parametrize("campos, campo, erro", [
+    ({"cpf": "123.456.789-00"}, "cpf", "CPF inválido"),
+    ({"nascimento": "2999-01-01"}, "nascimento", "não pode estar no futuro"),
+    ({"nascimento": "ontem"}, "nascimento", "data de nascimento válida"),
+    ({"nome": "   "}, "nome", "Informe o nome"),
+])
+def test_cadastro_invalido_e_recusado(cliente, campos, campo, erro):
+    resposta = cliente.post("/api/pacientes", json=formulario(**campos))
 
-    assert "CPF inválido" in resposta.get_data(as_text=True)
+    assert resposta.status_code == 422
+    assert erro in resposta.get_json()["erros"][campo]
     assert Paciente.query.count() == 0
 
 
 def test_cadastro_com_cpf_repetido_e_recusado(cliente, criar_paciente):
     criar_paciente("Já cadastrada", cpf="52998224725")
 
-    resposta = cliente.post("/pacientes/novo", data=formulario())
+    resposta = cliente.post("/api/pacientes", json=formulario())
 
-    assert "Já existe um paciente" in resposta.get_data(as_text=True)
+    assert "Já existe um paciente" in resposta.get_json()["erros"]["cpf"]
     assert Paciente.query.count() == 1
-
-
-def test_cadastro_com_nascimento_no_futuro_e_recusado(cliente):
-    resposta = cliente.post("/pacientes/novo", data=formulario(nascimento="2999-01-01"))
-
-    assert "não pode estar no futuro" in resposta.get_data(as_text=True)
 
 
 def test_editar_mantendo_o_proprio_cpf_funciona(cliente, criar_paciente):
     paciente = criar_paciente("Ana", cpf="52998224725")
 
-    cliente.post(
-        f"/pacientes/editar/{paciente.id}",
-        data=formulario(nome="Ana Souza"),
-    )
+    cliente.put(f"/api/pacientes/{paciente.id}", json=formulario(nome="Ana Souza"))
 
     db.session.refresh(paciente)
     assert paciente.nome == "Ana Souza"
 
 
-# ---------- Busca e página ----------
+# ---------- Busca ----------
 
 def test_busca_por_nome_e_por_cpf(cliente, criar_paciente):
     criar_paciente("Mariana", cpf="52998224725")
     criar_paciente("Bruno", cpf="11144477735")
 
-    por_nome = cliente.get("/pacientes?q=ana").get_data(as_text=True)
-    assert "Mariana" in por_nome and "Bruno" not in por_nome
-
-    por_cpf = cliente.get("/pacientes?q=111.444").get_data(as_text=True)
-    assert "Bruno" in por_cpf and "Mariana" not in por_cpf
+    assert nomes_em(listas(cliente, "ana")["fila"]) == ["Mariana"]
+    assert nomes_em(listas(cliente, "111.444")["fila"]) == ["Bruno"]
 
 
 @pytest.mark.parametrize("termo", ["joao", "JOÃO", "João", "conceicao", "CONCEIÇÃO"])
@@ -147,36 +156,31 @@ def test_busca_ignora_acentos_e_maiusculas(cliente, criar_paciente, termo):
     criar_paciente("João da Conceição")
     criar_paciente("Bruno")
 
-    pagina = cliente.get(f"/pacientes?q={termo}").get_data(as_text=True)
-
-    assert "João da Conceição" in pagina and "Bruno" not in pagina
+    assert nomes_em(listas(cliente, termo)["fila"]) == ["João da Conceição"]
 
 
 def test_busca_acentuada_acha_nome_sem_acento(cliente, criar_paciente):
     # Recepcionista digitou com acento, mas o cadastro foi feito sem
     criar_paciente("Jose Antonio")
 
-    pagina = cliente.get("/pacientes?q=José Antônio").get_data(as_text=True)
-
-    assert "Jose Antonio" in pagina
+    assert nomes_em(listas(cliente, "José Antônio")["fila"]) == ["Jose Antonio"]
 
 
 def test_busca_nao_muda_a_posicao_na_fila(cliente, criar_paciente):
     criar_paciente("Ana")
     criar_paciente("Bruno")
 
-    pagina = cliente.get("/pacientes?q=bruno").get_data(as_text=True)
+    dados = listas(cliente, "bruno")
 
-    assert "2º" in pagina  # Bruno continua em 2º, mesmo sozinho na busca
+    assert [(p["nome"], p["posicao"]) for p in dados["fila"]] == [("Bruno", 2)]
+    assert dados["total_na_fila"] == 2  # "Chamar próximo" olha a fila toda
 
 
-def test_versao_parcial_vem_sem_menu(cliente, criar_paciente):
+def test_busca_com_porcentagem_e_texto_comum(cliente, criar_paciente):
+    """'%' e '_' são curingas no SQL; aqui têm que valer como texto."""
     criar_paciente("Ana")
 
-    parcial = cliente.get("/pacientes?parcial=1").get_data(as_text=True)
-
-    assert 'data-fila="1"' in parcial
-    assert "<nav>" not in parcial
+    assert listas(cliente, "%25")["fila"] == []   # %25 = "%" no endereço
 
 
 # ---------- Painel ----------
@@ -185,8 +189,8 @@ def test_painel_mostra_o_ultimo_chamado(cliente, criar_paciente):
     criar_paciente("Ana Lima")
     criar_paciente("Bruno Costa")
 
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})  # Ana
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})  # Bruno
+    chamar(cliente)  # Ana
+    chamar(cliente)  # Bruno
 
     dados = cliente.get("/painel/dados").get_json()
 
@@ -201,73 +205,69 @@ def test_painel_vazio(cliente):
     assert dados == {"atual": None, "anteriores": [], "aguardando": 0}
 
 
+def test_painel_nao_pede_login(cliente_anonimo, criar_paciente):
+    criar_paciente("Ana Lima", status="Em atendimento", chamado_em=datetime.now())
+
+    dados = cliente_anonimo.get("/painel/dados").get_json()
+
+    assert dados["atual"]["nome"] == "Ana L."  # só primeiro nome + inicial
+
+
 # ---------- Locais (guichês/consultórios) ----------
 
 def test_chamar_registra_o_local(cliente, criar_paciente):
     paciente = criar_paciente("Ana")
 
-    resposta = cliente.post(
-        "/pacientes/chamar-proximo", data={"local": "Consultório 2"},
-        follow_redirects=True,
-    )
+    resposta = chamar(cliente, "Consultório 2")
 
     db.session.refresh(paciente)
     assert paciente.local == "Consultório 2"
-    assert "para Consultório 2" in resposta.get_data(as_text=True)
+    assert "para Consultório 2" in resposta.get_json()["mensagem"]
 
 
 @pytest.mark.parametrize("local", ["", "Sala Secreta"])
 def test_chamar_sem_local_valido_nao_chama_ninguem(cliente, criar_paciente, local):
     paciente = criar_paciente("Ana")
 
-    resposta = cliente.post(
-        "/pacientes/chamar-proximo", data={"local": local}, follow_redirects=True
-    )
+    resposta = chamar(cliente, local)
 
     db.session.refresh(paciente)
     assert paciente.status == "Aguardando"
-    assert "Escolha para qual local" in resposta.get_data(as_text=True)
+    assert "Escolha para qual local" in resposta.get_json()["erro"]
 
 
 def test_ultimo_local_ja_vem_escolhido(cliente, criar_paciente):
     criar_paciente("Ana")
 
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Consultório 3"})
-    pagina = cliente.get("/pacientes").get_data(as_text=True)
+    chamar(cliente, "Consultório 3")
 
-    assert '<option value="Consultório 3" selected>' in pagina
+    assert listas(cliente)["ultimo_local"] == "Consultório 3"
 
 
 def test_primeira_vez_pede_para_escolher(cliente):
-    pagina = cliente.get("/pacientes").get_data(as_text=True)
-
-    assert "Chamar para..." in pagina
-    assert " selected>" not in pagina.replace("selected disabled>", "")
+    assert listas(cliente)["ultimo_local"] is None
 
 
 def test_painel_mostra_o_local(cliente, criar_paciente):
     criar_paciente("Ana Lima")
     criar_paciente("Bruno Costa")
 
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Consultório 1"})
+    chamar(cliente, "Triagem")
+    chamar(cliente, "Consultório 1")
 
     dados = cliente.get("/painel/dados").get_json()
     assert dados["atual"]["local"] == "Consultório 1"
     assert dados["anteriores"][0]["local"] == "Triagem"
-
-    html = cliente.get("/painel").get_data(as_text=True)
-    assert "→ Consultório 1" in html
 
 
 def test_painel_com_chamada_antiga_sem_local(cliente, criar_paciente):
     criar_paciente("Antigo Silva", status="Em atendimento",
                    chamado_em=datetime.now(), local=None)
 
-    html = cliente.get("/painel").get_data(as_text=True)
+    atual = cliente.get("/painel/dados").get_json()["atual"]
 
-    assert "Antigo S." in html
-    assert "→" not in html.split("<script>")[0]  # nada de "→ None"
+    assert atual["nome"] == "Antigo S."
+    assert atual["local"] is None  # o React não mostra "→ None"
 
 
 # ---------- Chamar de novo ----------
@@ -291,7 +291,7 @@ def test_chamar_de_novo_volta_ao_painel(cliente, criar_paciente):
     em_atendimento(criar_paciente, "Bruno Costa", "Consultório 1", chamado_ha_min=2)
     chave_antes = cliente.get("/painel/dados").get_json()["atual"]["chave"]
 
-    cliente.post(f"/pacientes/chamar-de-novo/{ana.id}")
+    cliente.post(f"/api/pacientes/{ana.id}/chamar-de-novo")
 
     dados = cliente.get("/painel/dados").get_json()
     assert dados["atual"]["nome"] == "Ana L."          # Ana voltou para o topo
@@ -305,7 +305,7 @@ def test_chamar_de_novo_nao_muda_o_tempo_de_espera(cliente, criar_paciente):
     paciente = em_atendimento(criar_paciente, "Ana", "Triagem", chamado_ha_min=5)
     primeira_chamada = paciente.chamado_em
 
-    cliente.post(f"/pacientes/chamar-de-novo/{paciente.id}")
+    cliente.post(f"/api/pacientes/{paciente.id}/chamar-de-novo")
 
     db.session.refresh(paciente)
     assert paciente.chamado_em == primeira_chamada   # a espera continua a mesma
@@ -316,7 +316,7 @@ def test_chamar_de_novo_nao_muda_o_tempo_de_espera(cliente, criar_paciente):
 def test_so_chama_de_novo_quem_esta_em_atendimento(cliente, criar_paciente):
     paciente = criar_paciente("Ana")  # ainda na fila
 
-    cliente.post(f"/pacientes/chamar-de-novo/{paciente.id}")
+    cliente.post(f"/api/pacientes/{paciente.id}/chamar-de-novo")
 
     db.session.refresh(paciente)
     assert paciente.ultima_chamada is None
@@ -325,23 +325,21 @@ def test_so_chama_de_novo_quem_esta_em_atendimento(cliente, criar_paciente):
 
 def test_primeira_chamada_nao_conta_como_de_novo(cliente, criar_paciente):
     criar_paciente("Ana")
-    cliente.post("/pacientes/chamar-proximo", data={"local": "Triagem"})
+    chamar(cliente)
 
     dados = cliente.get("/painel/dados").get_json()
 
     assert dados["atual"]["de_novo"] is False
-    assert "Chamando agora" in cliente.get("/painel").get_data(as_text=True)
 
 
-def test_pagina_mostra_quando_foi_chamado_de_novo(cliente, criar_paciente):
+def test_lista_mostra_quando_foi_chamado_de_novo(cliente, criar_paciente):
     paciente = em_atendimento(criar_paciente, "Ana", "Triagem", chamado_ha_min=5)
 
-    cliente.post(f"/pacientes/chamar-de-novo/{paciente.id}")
+    cliente.post(f"/api/pacientes/{paciente.id}/chamar-de-novo")
 
-    html = cliente.get("/pacientes").get_data(as_text=True)
-    assert "Chamar de novo" in html
-    assert "chamado de novo às" in html
-    assert "Chamando novamente" in cliente.get("/painel").get_data(as_text=True)
+    ana = listas(cliente)["em_atendimento"][0]
+    assert ana["foi_rechamado"] is True
+    assert ana["ultima_chamada"] != ana["chamado_em"]
 
 
 # ---------- Não compareceu ----------
@@ -349,35 +347,21 @@ def test_pagina_mostra_quando_foi_chamado_de_novo(cliente, criar_paciente):
 def test_nao_compareceu_encerra_e_vai_para_o_historico(cliente, criar_paciente):
     paciente = em_atendimento(criar_paciente, "Ana", "Triagem", chamado_ha_min=5)
 
-    cliente.post(f"/pacientes/nao-compareceu/{paciente.id}")
+    cliente.post(f"/api/pacientes/{paciente.id}/nao-compareceu")
 
     db.session.refresh(paciente)
     assert paciente.status == "Não compareceu"
     assert paciente.concluido_em is not None
 
-    html = cliente.get("/pacientes").get_data(as_text=True)
-    historico = html.split("Histórico de atendimentos")[1]
-    assert "Ana" in historico
-    assert 'class="ausente"' in historico
-    assert "Ninguém sendo atendido" in html  # saiu de "Em atendimento"
+    dados = listas(cliente)
+    assert dados["em_atendimento"] == []  # saiu de "Em atendimento"
+    assert [(p["nome"], p["status"]) for p in dados["historico"]] == [("Ana", "Não compareceu")]
 
 
 def test_nao_compareceu_so_vale_para_quem_esta_em_atendimento(cliente, criar_paciente):
     paciente = criar_paciente("Ana")  # ainda na fila
 
-    cliente.post(f"/pacientes/nao-compareceu/{paciente.id}")
+    cliente.post(f"/api/pacientes/{paciente.id}/nao-compareceu")
 
     db.session.refresh(paciente)
     assert paciente.status == "Aguardando"
-
-
-def test_nome_com_apostrofo_nao_quebra_o_confirm(cliente, criar_paciente):
-    """O nome do paciente NÃO pode ir para dentro do confirm('...'):
-    um apóstrofo fecharia a string do JavaScript."""
-    em_atendimento(criar_paciente, "Joana D'Arc", "Triagem", chamado_ha_min=5)
-
-    html = cliente.get("/pacientes").get_data(as_text=True)
-
-    for linha in html.splitlines():
-        if "confirm(" in linha:
-            assert "Arc" not in linha
