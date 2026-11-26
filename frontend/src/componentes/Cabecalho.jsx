@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 
 import { useSessao } from '../sessao.jsx'
 
@@ -25,8 +25,9 @@ export default function Cabecalho() {
             <NavLink to="/usuarios">Usuários</NavLink>
           </>
         )}
-        {/* target="_blank": abre a TV em outra aba */}
-        <a href="/painel" target="_blank" rel="noreferrer">Painel da TV</a>
+        {/* target="_blank": abre a TV em outra aba. Link (e não <a href>)
+            para o endereço ganhar o /app/ do começo sozinho */}
+        <Link to="/painel" target="_blank" rel="noreferrer">Painel da TV</Link>
       </nav>
 
       <div className="usuario">

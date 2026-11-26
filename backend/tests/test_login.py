@@ -42,7 +42,12 @@ def test_todas_as_rotas_novas_nascem_protegidas(cliente_anonimo):
     Se alguém criar uma rota e ela abrir sem login, este teste avisa."""
     # Escrita AQUI de propósito (e comparada com a do app): tornar uma
     # página pública exige mexer nos dois lugares, ou seja, uma decisão.
-    publicas = {"login", "static", "painel", "painel_dados", "api_sessao", "api_login"}
+    publicas = {
+        "login", "static", "painel", "painel_dados", "api_sessao", "api_login",
+        # Só os arquivos do React (sem dados); a API continua fechada.
+        # Ver test_frontend.py::test_api_continua_exigindo_login
+        "frontend_react",
+    }
     assert PAGINAS_PUBLICAS == publicas
 
     for regra in app.url_map.iter_rules():

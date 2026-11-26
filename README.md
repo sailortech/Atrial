@@ -77,6 +77,14 @@ venv\Scripts\python -m flask --app app run --debug
 
 Abra **http://127.0.0.1:5000** e entre com o usuário criado no passo 4. Os outros usuários podem ser cadastrados pela página **Usuários**.
 
+**A versão em React** fica em **http://127.0.0.1:5000/app/**, servida pelo próprio Flask, mas só depois de gerada uma vez (veja [Frontend em React](#frontend-em-react)):
+
+```powershell
+cd frontend
+npm install        # só na primeira vez
+npm run build      # de novo sempre que o código do React mudar
+```
+
 O `--debug` reinicia o servidor sozinho quando um arquivo muda, e mostra os erros detalhados no navegador. **Use só no seu computador.** Se o servidor ficar mostrando um erro estranho depois de você editar vários arquivos de uma vez, pare (Ctrl+C) e rode de novo.
 
 ### Painel na TV
@@ -173,7 +181,9 @@ Dentro do `app.py`, as partes estão separadas por comentários (`# ---------- L
 
 ## Frontend em React
 
-A pasta `frontend/` tem a versão em **React** de todas as telas do sistema. As páginas do Flask continuam funcionando normalmente: as duas versões usam o mesmo banco e as mesmas regras.
+A pasta `frontend/` tem a versão em **React** de todas as telas do sistema. As páginas do Flask continuam funcionando normalmente: as duas versões usam o mesmo banco, as mesmas regras e até o mesmo login.
+
+O React mora em **`/app/`**: os endereços abaixo ficam `/app/pacientes`, `/app/relatorio` e assim por diante.
 
 | Endereço (no React) | Tela |
 |---|---|
@@ -192,14 +202,19 @@ Requisito: **Node.js** (testado com o 24), que já traz o `npm`.
 # Uma vez só: baixa as bibliotecas (React, Vite...) para frontend\node_modules
 cd frontend
 npm install
-
-# Para desenvolver (com o backend rodando em outro terminal):
-npm run dev
 ```
 
-Abra **http://localhost:5173**. O código fica em `frontend/src/`, e o navegador se atualiza sozinho a cada arquivo salvo.
+Há dois jeitos de rodar o React:
 
-**Como o React fala com o Flask:** o React roda no Vite, na porta 5173, e o Flask roda na 5000. Quando o React pede `/api/...` ou `/painel/dados`, o Vite repassa o pedido para o Flask (o *proxy*, configurado em `vite.config.js`). Para o navegador, tudo parece um site só, e por isso o **cookie de login do Flask** funciona no React também.
+| | Para quê | Como | Endereço |
+|---|---|---|---|
+| **Pronto (build)** | Usar o sistema | `npm run build` e depois só o Flask | http://127.0.0.1:5000/app/ |
+| **Desenvolvimento** | Mexer no código | Flask num terminal e `npm run dev` em outro | http://localhost:5173/app/ |
+
+- **Pronto:** `npm run build` gera os arquivos finais em `frontend/dist/` (fora do Git), e o Flask os entrega em `/app/...` (rota `frontend_react` no `app.py`). Um servidor só. Qualquer endereço que não seja um arquivo (`/app/relatorio?dia=...`) recebe o `index.html`, e o React decide a tela: por isso o F5 e os links diretos funcionam. **Mudou o código do React? Rode `npm run build` de novo.**
+- **Desenvolvimento:** o Vite mostra cada mudança na hora, sem precisar de build. O código fica em `frontend/src/`, e o navegador se atualiza sozinho a cada arquivo salvo.
+
+**Como o React fala com o Flask (no desenvolvimento):** o React roda no Vite, na porta 5173, e o Flask roda na 5000. Quando o React pede `/api/...` ou `/painel/dados`, o Vite repassa o pedido para o Flask (o *proxy*, configurado em `vite.config.js`). Para o navegador, tudo parece um site só, e por isso o **cookie de login do Flask** funciona no React também.
 
 A API fica no fim do `backend/app.py` (seção "API JSON"), e as rotas dela usam **as mesmas funções** das páginas HTML (`autenticar`, `acao_chamar_proximo`, ...): as regras ficam num lugar só. Ela segue estas convenções:
 

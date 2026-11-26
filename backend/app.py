@@ -9,7 +9,7 @@ from pathlib import Path
 import click
 from flask import (
     Flask, abort, flash, jsonify, redirect, render_template, request,
-    session, url_for,
+    send_from_directory, session, url_for,
 )
 
 from flask_login import (
@@ -19,7 +19,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
-from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash, safe_join
 
 
 app = Flask(__name__)
@@ -60,6 +60,12 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
     "DATABASE_URL", "sqlite:///atrial.db"
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Onde está o React pronto (gerado com "npm run build" em frontend/).
+# ATRIAL_FRONTEND_DIST troca a pasta (os testes usam uma pasta de mentira).
+app.config["FRONTEND_DIST"] = os.environ.get(
+    "ATRIAL_FRONTEND_DIST", str(Path(app.root_path).parent / "frontend" / "dist")
+)
 
 db = SQLAlchemy(app)
 
@@ -569,6 +575,9 @@ PAGINAS_PUBLICAS = {
     "login", "static", "painel", "painel_dados",
     # API do React: ver se está logado e fazer o login
     "api_sessao", "api_login",
+    # Os arquivos do React (HTML, JS, CSS) não têm dados: quem pede
+    # login é o próprio React, perguntando à API
+    "frontend_react",
 }
 
 # O que quem está com senha provisória ainda pode usar
@@ -1510,6 +1519,46 @@ def redefinir_senha(id):
         return redirect(url_for("usuarios"))
 
     return render_template("redefinir_senha.html", usuario=usuario)
+
+
+# ---------- React pronto, servido pelo Flask ----------
+#
+# No desenvolvimento, o React roda no Vite (npm run dev, porta 5173).
+# Para USAR o sistema, não precisa do Vite: "npm run build" gera os
+# arquivos prontos em frontend/dist/, e o Flask os entrega aqui, em
+# /app/... Um servidor só, uma porta só.
+
+@app.get("/app/", defaults={"caminho": ""})
+@app.get("/app/<path:caminho>")
+def frontend_react(caminho):
+    pasta = app.config["FRONTEND_DIST"]
+
+    if not os.path.isfile(os.path.join(pasta, "index.html")):
+        return (
+            "O React ainda não foi gerado. Dentro de frontend/, rode: "
+            "npm install (uma vez) e npm run build.",
+            404,
+            {"Content-Type": "text/plain; charset=utf-8"},
+        )
+
+    # Um arquivo que existe de verdade (JS, CSS, imagem)? Entrega ele.
+    # safe_join recusa truques como /app/../../app.py (devolve None).
+    arquivo = safe_join(pasta, caminho) if caminho else None
+    if arquivo and os.path.isfile(arquivo):
+        # Os arquivos de assets/ têm um código no nome (index-BBQzGiAg.js)
+        # que muda a cada build: o navegador pode guardá-los por 1 ano.
+        guardar_por = 365 * 24 * 3600 if caminho.startswith("assets/") else None
+        return send_from_directory(pasta, caminho, max_age=guardar_por)
+
+    # Qualquer outro endereço (/app/pacientes, /app/relatorio?dia=...)
+    # é uma TELA do React, e não um arquivo. Entregamos sempre o
+    # index.html, e o React Router decide o que desenhar. É isso que
+    # faz o F5 e os links diretos funcionarem.
+    resposta = send_from_directory(pasta, "index.html")
+    # index.html nunca fica guardado: é ele que aponta para os assets
+    # do build mais novo
+    resposta.headers["Cache-Control"] = "no-cache"
+    return resposta
 
 
 # ---------- API JSON (usada pelo frontend em React) ----------

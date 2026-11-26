@@ -9,6 +9,12 @@ const backend = process.env.ATRIAL_BACKEND ?? 'http://127.0.0.1:5000'
 export default defineConfig({
   plugins: [react()],
 
+  // O React mora em /app/ (é onde o Flask entrega o build pronto).
+  // O Vite põe esse começo nos endereços dos arquivos gerados, e o
+  // App.jsx avisa o React Router (import.meta.env.BASE_URL).
+  // No desenvolvimento, o endereço fica http://localhost:5173/app/
+  base: '/app/',
+
   server: {
     // Proxy: o React roda em http://localhost:5173 e o Flask em :5000.
     // Quando o React pede "/api/..." ou "/painel/dados", o Vite repassa

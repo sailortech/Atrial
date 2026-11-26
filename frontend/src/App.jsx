@@ -18,10 +18,14 @@ import { SessaoProvider } from './sessao.jsx'
  * Diferente do Flask, trocar de tela aqui NÃO recarrega a página:
  * o React Router só troca o componente desenhado (por isso é rápido).
  */
+// "/app/" -> "/app": o começo de todos os endereços do React.
+// Com ele, <Link to="/pacientes"> leva para /app/pacientes.
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
+
 export default function App() {
   return (
     <SessaoProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={BASE}>
         <Routes>
           {/* A TV não pede login (igual ao /painel do Flask) */}
           <Route path="/painel" element={<Painel />} />
