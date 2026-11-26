@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { api } from '../api.js'
+import Mensagem from '../componentes/Mensagem.jsx'
 import BarraDeChamada from '../componentes/pacientes/BarraDeChamada.jsx'
 import TabelaEmAtendimento from '../componentes/pacientes/TabelaEmAtendimento.jsx'
 import TabelaFila from '../componentes/pacientes/TabelaFila.jsx'
@@ -82,13 +83,7 @@ export default function Pacientes() {
         <Link to="/pacientes/novo" className="botao principal">+ Cadastrar paciente</Link>
       </div>
 
-      {mensagem && (
-        <p className={`mensagem ${mensagem.tipo}`}>
-          {mensagem.texto}
-          <button type="button" className="fechar" onClick={() => setMensagem(null)}
-                  aria-label="Fechar mensagem">×</button>
-        </p>
-      )}
+      <Mensagem mensagem={mensagem} aoFechar={() => setMensagem(null)} />
       {erro && <p className="mensagem erro">{erro}</p>}
 
       <BarraDeChamada

@@ -546,3 +546,30 @@ button.perigo:hover:not(:disabled) {
 .usuario a.active {
   text-decoration: underline;
 }
+
+/* ----- Locais ----- */
+
+/* [campo................] [Adicionar] numa linha só */
+.linha-de-cadastro {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.linha-de-cadastro > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  max-width: 400px;
+}
+
+/* Tabela de poucas colunas: não precisa ocupar a tela toda */
+table.tabela-estreita {
+  max-width: 640px;
+}
+
+tr.inativo td {
+  color: #888;
+}

@@ -18,6 +18,13 @@ ROTAS_DE_ADMIN = [
     ("post", "/usuarios/1/senha"),
 ]
 
+# As mesmas proteções na API do React (lá a resposta é JSON 403)
+ROTAS_DE_ADMIN_API = [
+    ("get", "/api/locais"),
+    ("post", "/api/locais"),
+    ("post", "/api/locais/1/alternar"),
+]
+
 
 def usuario(login):
     return Usuario.query.filter_by(login=login).one()
@@ -31,6 +38,15 @@ def test_recepcao_nao_entra_nas_paginas_de_admin(cliente, metodo, endereco):
 
     assert resposta.status_code == 302
     assert resposta.location == "/pacientes"
+
+
+@pytest.mark.parametrize("metodo, endereco", ROTAS_DE_ADMIN_API)
+def test_recepcao_nao_usa_a_api_de_admin(cliente, metodo, endereco):
+    resposta = getattr(cliente, metodo)(endereco, json={"nome": "Invasor"})
+
+    assert resposta.status_code == 403
+    assert "administração" in resposta.get_json()["erro"]
+    assert Local.query.filter_by(nome="Invasor").first() is None
 
 
 def test_recepcao_nao_consegue_mudar_nada(cliente, admin):
@@ -71,7 +87,7 @@ def test_toda_rota_de_admin_esta_na_lista():
     mapa = flask_app.url_map.bind("localhost")
     testadas = {
         mapa.match(endereco, method=metodo.upper())[0]
-        for metodo, endereco in ROTAS_DE_ADMIN
+        for metodo, endereco in ROTAS_DE_ADMIN + ROTAS_DE_ADMIN_API
     }
 
     assert so_admin, "nenhuma rota com a etiqueta? o decorador mudou?"

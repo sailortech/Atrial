@@ -517,6 +517,9 @@ def admin_obrigatorio(rota):
     @wraps(rota)  # mantém o nome da função (o Flask usa no url_for)
     def permitir(*args, **kwargs):
         if not current_user.admin:
+            if e_pedido_da_api():
+                # 403 = "sei quem você é, mas você não pode"
+                return jsonify(erro="Só a administração pode fazer isso."), 403
             flash("Só a administração pode acessar essa página.", "erro")
             return redirect(url_for("pacientes"))
         return rota(*args, **kwargs)
@@ -1257,58 +1260,76 @@ def excluir_paciente(id):
 
 # ---------- Locais (cadastro) ----------
 
+def lista_de_locais():
+    # Ativos primeiro; dentro de cada grupo, em ordem alfabética
+    return Local.query.order_by(Local.ativo.desc(), Local.nome).all()
+
+
+def validar_novo_local(texto):
+    """Limpa e confere o nome de um local novo. Devolve (nome, erro);
+    erro None = pode cadastrar. Usada pela página Flask e pela API."""
+    # " consultório  4 " -> "consultório 4" (tira espaços sobrando)
+    nome = " ".join(str(texto or "").split())
+
+    # Compara sem acentos/maiúsculas: "consultorio 1" e "Consultório 1"
+    # seriam o mesmo local, só digitado diferente.
+    repetido = any(
+        normalizar(local.nome) == normalizar(nome)
+        for local in Local.query.all()
+    )
+
+    if not nome:
+        return nome, "Informe o nome do local."
+    if len(nome) > 50:
+        return nome, "O nome pode ter no máximo 50 caracteres."
+    if repetido:
+        return nome, f"Já existe um local chamado \"{nome}\" (veja a lista abaixo)."
+    return nome, None
+
+
+def acao_adicionar_local(nome):
+    db.session.add(Local(nome=nome))
+    db.session.commit()
+    return f"Local \"{nome}\" adicionado."
+
+
+def acao_alternar_local(local):
+    """Desativa um local ativo, ou reativa um desativado.
+    Devolve (deu_certo, mensagem), como as ações de atendimento."""
+    if local.ativo and len(nomes_dos_locais_ativos()) == 1:
+        # Sem nenhum local ativo, ninguém conseguiria chamar pacientes
+        return False, "É preciso ter pelo menos um local ativo."
+
+    local.ativo = not local.ativo
+    db.session.commit()
+
+    situacao = "reativado" if local.ativo else "desativado"
+    return True, f"Local \"{local.nome}\" {situacao}."
+
+
 @app.route("/locais", methods=["GET", "POST"])
 @admin_obrigatorio
 def locais():
 
     if request.method == "POST":
-        # " consultório  4 " -> "consultório 4" (tira espaços sobrando)
-        nome = " ".join(request.form.get("nome", "").split())
+        nome, erro = validar_novo_local(request.form.get("nome", ""))
 
-        # Compara sem acentos/maiúsculas: "consultorio 1" e "Consultório 1"
-        # seriam o mesmo local, só digitado diferente.
-        repetido = any(
-            normalizar(local.nome) == normalizar(nome)
-            for local in Local.query.all()
-        )
-
-        if not nome:
-            flash("Informe o nome do local.", "erro")
-        elif len(nome) > 50:
-            flash("O nome pode ter no máximo 50 caracteres.", "erro")
-        elif repetido:
-            flash(f"Já existe um local chamado \"{nome}\" (veja a lista abaixo).", "erro")
+        if erro:
+            flash(erro, "erro")
         else:
-            db.session.add(Local(nome=nome))
-            db.session.commit()
-            flash(f"Local \"{nome}\" adicionado.", "sucesso")
+            flash(acao_adicionar_local(nome), "sucesso")
 
         return redirect(url_for("locais"))
 
-    return render_template(
-        "locais.html",
-        # Ativos primeiro; dentro de cada grupo, em ordem alfabética
-        locais=Local.query.order_by(Local.ativo.desc(), Local.nome).all(),
-    )
+    return render_template("locais.html", locais=lista_de_locais())
 
 
 @app.route("/locais/<int:id>/alternar", methods=["POST"])
 @admin_obrigatorio
 def alternar_local(id):
     """Desativa um local ativo, ou reativa um desativado."""
-    local = db.get_or_404(Local, id)
-
-    if local.ativo and len(nomes_dos_locais_ativos()) == 1:
-        # Sem nenhum local ativo, ninguém conseguiria chamar pacientes
-        flash("É preciso ter pelo menos um local ativo.", "erro")
-        return redirect(url_for("locais"))
-
-    local.ativo = not local.ativo
-    db.session.commit()
-
-    situacao = "reativado" if local.ativo else "desativado"
-    flash(f"Local \"{local.nome}\" {situacao}.", "sucesso")
-
+    deu_certo, mensagem = acao_alternar_local(db.get_or_404(Local, id))
+    flash(mensagem, "sucesso" if deu_certo else "erro")
     return redirect(url_for("locais"))
 
 
@@ -1743,6 +1764,37 @@ def api_minha_senha():
 
     acao_trocar_minha_senha(nova)
     return jsonify(mensagem="Senha alterada.", usuario=usuario_json(current_user))
+
+
+# ---------- API: locais (só administração) ----------
+
+def local_json(local):
+    return {"id": local.id, "nome": local.nome, "ativo": local.ativo}
+
+
+@app.get("/api/locais")
+@admin_obrigatorio
+def api_locais():
+    return jsonify(locais=[local_json(local) for local in lista_de_locais()])
+
+
+@app.post("/api/locais")
+@admin_obrigatorio
+def api_adicionar_local():
+    dados = request.get_json(silent=True) or {}
+    nome, erro = validar_novo_local(dados.get("nome"))
+    if erro:
+        return erros_de_validacao({"nome": erro})
+    return jsonify(mensagem=acao_adicionar_local(nome)), 201
+
+
+@app.post("/api/locais/<int:id>/alternar")
+@admin_obrigatorio
+def api_alternar_local(id):
+    local = db.session.get(Local, id)
+    if local is None:
+        return jsonify(erro="Local não encontrado."), 404
+    return resposta_da_acao(acao_alternar_local(local))
 
 
 if __name__ == "__main__":

@@ -127,3 +127,60 @@ def test_pagina_lista_ativos_e_desativados(cliente_admin):
     # "Local Consultório 2 desativado." aparece antes dela, no topo)
     tabela = html.split("<tbody>")[1]
     assert tabela.index("Triagem") < tabela.index("Consultório 2")
+
+
+# ---------- API (React) ----------
+
+def test_api_lista_ativos_primeiro(cliente_admin):
+    local("Consultório 1").ativo = False
+    db.session.commit()
+
+    locais = cliente_admin.get("/api/locais").get_json()["locais"]
+
+    assert [l["nome"] for l in locais] == [
+        "Consultório 2", "Consultório 3", "Triagem", "Consultório 1",
+    ]
+    assert locais[-1]["ativo"] is False
+
+
+def test_api_adiciona_local(cliente_admin):
+    resposta = cliente_admin.post("/api/locais", json={"nome": "  Raio   X "})
+
+    assert resposta.status_code == 201
+    assert resposta.get_json()["mensagem"] == 'Local "Raio X" adicionado.'
+    assert local("Raio X").ativo
+
+
+@pytest.mark.parametrize("nome", ["", "consultorio 1", "x" * 51, None])
+def test_api_recusa_nome_invalido(cliente_admin, nome):
+    resposta = cliente_admin.post("/api/locais", json={"nome": nome})
+
+    assert resposta.status_code == 422
+    assert "nome" in resposta.get_json()["erros"]
+    assert Local.query.count() == 4  # só os iniciais
+
+
+def test_api_alterna_local(cliente_admin):
+    id_ = local("Consultório 2").id
+
+    resposta = cliente_admin.post(f"/api/locais/{id_}/alternar")
+    assert resposta.get_json()["mensagem"] == 'Local "Consultório 2" desativado.'
+    assert not local("Consultório 2").ativo
+
+    cliente_admin.post(f"/api/locais/{id_}/alternar")
+    assert local("Consultório 2").ativo
+
+
+def test_api_nao_desativa_o_ultimo_local(cliente_admin):
+    for nome in ["Consultório 1", "Consultório 2", "Consultório 3"]:
+        cliente_admin.post(f"/api/locais/{local(nome).id}/alternar")
+
+    resposta = cliente_admin.post(f"/api/locais/{local('Triagem').id}/alternar")
+
+    assert resposta.status_code == 409
+    assert "pelo menos um local ativo" in resposta.get_json()["erro"]
+    assert local("Triagem").ativo
+
+
+def test_api_local_inexistente(cliente_admin):
+    assert cliente_admin.post("/api/locais/999/alternar").status_code == 404

@@ -2,7 +2,9 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import AreaLogada from './componentes/AreaLogada.jsx'
 import Painel from './componentes/Painel.jsx'
+import SoAdmin from './componentes/SoAdmin.jsx'
 import EditarPaciente from './paginas/EditarPaciente.jsx'
+import Locais from './paginas/Locais.jsx'
 import MinhaSenha from './paginas/MinhaSenha.jsx'
 import NovoPaciente from './paginas/NovoPaciente.jsx'
 import Pacientes from './paginas/Pacientes.jsx'
@@ -31,6 +33,11 @@ export default function App() {
             <Route path="/pacientes/:id/editar" element={<EditarPaciente />} />
             <Route path="/relatorio" element={<Relatorio />} />
             <Route path="/minha-senha" element={<MinhaSenha />} />
+
+            {/* Portaria dentro da portaria: além de logado, precisa ser admin */}
+            <Route element={<SoAdmin />}>
+              <Route path="/locais" element={<Locais />} />
+            </Route>
           </Route>
 
           {/* Qualquer outro endereço vai para a lista de pacientes */}
