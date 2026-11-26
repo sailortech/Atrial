@@ -1276,9 +1276,12 @@ def lista_de_locais():
     return Local.query.order_by(Local.ativo.desc(), Local.nome).all()
 
 
-def validar_novo_local(texto):
-    """Limpa e confere o nome de um local novo. Devolve (nome, erro);
-    erro None = pode cadastrar. Usada pela página Flask e pela API."""
+def validar_nome_de_local(texto, local_id=None):
+    """Limpa e confere o nome de um local. Devolve (nome, erro); erro
+    None = pode usar. Usada pela página Flask e pela API.
+
+    Ao RENOMEAR, passe local_id: o próprio local não conta como
+    repetido (assim dá para corrigir "triagem" para "Triagem")."""
     # " consultório  4 " -> "consultório 4" (tira espaços sobrando)
     nome = " ".join(str(texto or "").split())
 
@@ -1287,6 +1290,7 @@ def validar_novo_local(texto):
     repetido = any(
         normalizar(local.nome) == normalizar(nome)
         for local in Local.query.all()
+        if local.id != local_id
     )
 
     if not nome:
@@ -1302,6 +1306,21 @@ def acao_adicionar_local(nome):
     db.session.add(Local(nome=nome))
     db.session.commit()
     return f"Local \"{nome}\" adicionado."
+
+
+def acao_renomear_local(local, nome):
+    """Troca o nome (já validado). Devolve a mensagem.
+
+    Os pacientes já chamados para este local continuam com o nome
+    ANTIGO (Paciente.local guarda o texto, de propósito): é o registro
+    de para onde foram chamados. Só as próximas chamadas usam o novo.
+    """
+    antigo = local.nome
+    local.nome = nome
+    db.session.commit()
+    if antigo == nome:
+        return f"O local \"{nome}\" continua com o mesmo nome."
+    return f"Local \"{antigo}\" agora se chama \"{nome}\"."
 
 
 def acao_alternar_local(local):
@@ -1323,7 +1342,7 @@ def acao_alternar_local(local):
 def locais():
 
     if request.method == "POST":
-        nome, erro = validar_novo_local(request.form.get("nome", ""))
+        nome, erro = validar_nome_de_local(request.form.get("nome", ""))
 
         if erro:
             flash(erro, "erro")
@@ -1845,10 +1864,25 @@ def api_locais():
 @admin_obrigatorio
 def api_adicionar_local():
     dados = request.get_json(silent=True) or {}
-    nome, erro = validar_novo_local(dados.get("nome"))
+    nome, erro = validar_nome_de_local(dados.get("nome"))
     if erro:
         return erros_de_validacao({"nome": erro})
     return jsonify(mensagem=acao_adicionar_local(nome)), 201
+
+
+@app.put("/api/locais/<int:id>")
+@admin_obrigatorio
+def api_renomear_local(id):
+    local = db.session.get(Local, id)
+    if local is None:
+        return jsonify(erro="Local não encontrado."), 404
+
+    nome, erro = validar_nome_de_local(
+        (request.get_json(silent=True) or {}).get("nome"), local_id=local.id
+    )
+    if erro:
+        return erros_de_validacao({"nome": erro})
+    return jsonify(mensagem=acao_renomear_local(local, nome))
 
 
 @app.post("/api/locais/<int:id>/alternar")

@@ -184,3 +184,69 @@ def test_api_nao_desativa_o_ultimo_local(cliente_admin):
 
 def test_api_local_inexistente(cliente_admin):
     assert cliente_admin.post("/api/locais/999/alternar").status_code == 404
+
+
+# ---------- Renomear (API) ----------
+
+def test_renomear_local(cliente_admin):
+    id_ = local("Consultório 3").id
+
+    resposta = cliente_admin.put(f"/api/locais/{id_}", json={"nome": "  Sala   de Vacina "})
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()["mensagem"] == 'Local "Consultório 3" agora se chama "Sala de Vacina".'
+    assert local("Sala de Vacina").id == id_
+    assert "Sala de Vacina" in nomes_dos_locais_ativos()
+
+
+def test_renomear_so_corrigindo_maiusculas_e_acentos(cliente_admin):
+    """O próprio local não conta como repetido."""
+    db.session.add(Local(nome="consultorio 4"))
+    db.session.commit()
+    id_ = local("consultorio 4").id
+
+    resposta = cliente_admin.put(f"/api/locais/{id_}", json={"nome": "Consultório 4"})
+
+    assert resposta.status_code == 200
+    assert local("Consultório 4").id == id_
+
+
+def test_renomear_mantendo_o_nome(cliente_admin):
+    resposta = cliente_admin.put(f"/api/locais/{local('Triagem').id}", json={"nome": "Triagem"})
+
+    assert resposta.status_code == 200
+    assert "mesmo nome" in resposta.get_json()["mensagem"]
+
+
+@pytest.mark.parametrize("nome", ["", "triagem", "x" * 51])
+def test_renomear_recusa_nome_invalido_ou_de_outro_local(cliente_admin, nome):
+    resposta = cliente_admin.put(f"/api/locais/{local('Consultório 1').id}", json={"nome": nome})
+
+    assert resposta.status_code == 422
+    assert "nome" in resposta.get_json()["erros"]
+    assert local("Consultório 1")  # continua com o nome antigo
+
+
+def test_renomear_nao_muda_o_historico(cliente_admin, criar_paciente):
+    """Quem já foi chamado continua com o nome de ANTES (é o registro)."""
+    paciente = criar_paciente("Ana", status="Concluído", local="Consultório 2",
+                              chamado_em=datetime.now(), concluido_em=datetime.now())
+
+    cliente_admin.put(f"/api/locais/{local('Consultório 2').id}", json={"nome": "Pediatria"})
+
+    db.session.refresh(paciente)
+    assert paciente.local == "Consultório 2"
+
+
+def test_chamar_para_o_local_renomeado(cliente_admin, criar_paciente):
+    criar_paciente("Bruno")
+    cliente_admin.put(f"/api/locais/{local('Consultório 2').id}", json={"nome": "Pediatria"})
+
+    resposta = cliente_admin.post("/api/pacientes/chamar-proximo", json={"local": "Pediatria"})
+
+    assert resposta.status_code == 200
+    assert Paciente.query.one().local == "Pediatria"
+
+
+def test_renomear_local_inexistente(cliente_admin):
+    assert cliente_admin.put("/api/locais/999", json={"nome": "X"}).status_code == 404

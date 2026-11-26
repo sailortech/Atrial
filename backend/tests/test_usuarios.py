@@ -23,6 +23,7 @@ ROTAS_DE_ADMIN_API = [
     ("get", "/api/locais"),
     ("post", "/api/locais"),
     ("post", "/api/locais/1/alternar"),
+    ("put", "/api/locais/1"),
     ("get", "/api/usuarios"),
     ("post", "/api/usuarios"),
     ("post", "/api/usuarios/1/ativo"),
