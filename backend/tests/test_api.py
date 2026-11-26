@@ -326,7 +326,7 @@ def test_editar_com_cpf_de_outro_paciente(cliente, criar_paciente):
     assert "cpf" in resposta.get_json()["erros"]
 
 
-@pytest.mark.parametrize("metodo", ["get", "put"])
+@pytest.mark.parametrize("metodo", ["get", "put", "delete"])
 def test_paciente_inexistente(cliente, metodo):
     resposta = getattr(cliente, metodo)("/api/pacientes/999", json=NOVO_PACIENTE)
     assert resposta.status_code == 404
@@ -339,3 +339,23 @@ def test_prioridades_vem_do_servidor(cliente):
 
 def test_cadastro_pela_api_exige_login(cliente_anonimo):
     assert cliente_anonimo.post("/api/pacientes", json=NOVO_PACIENTE).status_code == 401
+
+
+# ---------- Excluir paciente ----------
+
+def test_excluir_paciente_pela_api(cliente, criar_paciente):
+    bruno = criar_paciente("Bruno")
+    criar_paciente("Carla")
+
+    resposta = cliente.delete(f"/api/pacientes/{bruno.id}")
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()["mensagem"] == "Paciente Bruno excluído."
+    assert [p.nome for p in Paciente.query.all()] == ["Carla"]  # só ele saiu
+
+
+def test_excluir_pela_api_exige_login(cliente_anonimo, criar_paciente):
+    paciente = criar_paciente("Bruno")
+
+    assert cliente_anonimo.delete(f"/api/pacientes/{paciente.id}").status_code == 401
+    assert Paciente.query.count() == 1

@@ -80,3 +80,17 @@ def test_todo_formulario_post_tem_o_codigo(cliente, criar_paciente, pagina):
 
 def test_tela_de_login_tem_o_codigo(cliente_anonimo):
     assert 'name="csrf_token"' in cliente_anonimo.get("/login").get_data(as_text=True)
+
+
+def test_api_exige_o_codigo_no_cabecalho(csrf_ligado, cliente, criar_paciente):
+    """No React o código vai no cabeçalho X-CSRFToken (não num campo escondido)."""
+    paciente = criar_paciente("Bruno")
+
+    sem_codigo = cliente.delete(f"/api/pacientes/{paciente.id}")
+    assert sem_codigo.status_code == 400
+    assert Paciente.query.count() == 1
+
+    codigo = cliente.get("/api/sessao").get_json()["csrf"]
+    com_codigo = cliente.delete(f"/api/pacientes/{paciente.id}", headers={"X-CSRFToken": codigo})
+    assert com_codigo.status_code == 200
+    assert Paciente.query.count() == 0

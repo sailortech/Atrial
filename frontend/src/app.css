@@ -383,3 +383,33 @@ td a.editar {
   font-size: 0.85rem;
   color: var(--texto-suave);
 }
+
+/* ----- Excluir paciente ----- */
+
+.zona-perigo {
+  max-width: 640px;
+  margin-top: 48px;
+  padding: 16px 20px;
+  border: 1px solid var(--erro-fundo);
+  border-radius: 6px;
+}
+
+.zona-perigo h3 {
+  margin-top: 0;
+  color: var(--erro-texto);
+}
+
+.zona-perigo p {
+  color: var(--texto-suave);
+}
+
+button.perigo {
+  background: #fff;
+  border: 1px solid var(--erro-texto);
+  color: var(--erro-texto);
+}
+
+button.perigo:hover:not(:disabled) {
+  background: var(--erro-texto);
+  color: #fff;
+}

@@ -449,6 +449,16 @@ def acao_cadastrar_paciente(dados):
     return paciente
 
 
+def acao_excluir_paciente(paciente):
+    """Apaga o paciente de vez (some também do histórico e do relatório).
+    Devolve a mensagem de confirmação."""
+    # Guarda o nome antes: depois de excluído, o objeto não pode mais ser lido
+    nome = paciente.nome
+    db.session.delete(paciente)
+    db.session.commit()
+    return f"Paciente {nome} excluído."
+
+
 def acao_editar_paciente(paciente, dados):
     """Atualiza os dados (já validados). Status e horários não mudam."""
     for nome, valor in dados.items():
@@ -1230,13 +1240,7 @@ def nao_compareceu(id):
 def excluir_paciente(id):
     paciente = db.get_or_404(Paciente, id)
 
-    # Guarda o nome antes: depois de excluído, o objeto não pode mais ser lido
-    nome = paciente.nome
-
-    db.session.delete(paciente)
-    db.session.commit()
-
-    flash(f"Paciente {nome} excluído.", "sucesso")
+    flash(acao_excluir_paciente(paciente), "sucesso")
 
     return redirect(url_for("pacientes"))
 
@@ -1648,6 +1652,16 @@ def api_editar_paciente(id):
         mensagem=f"Dados de {paciente.nome} atualizados.",
         paciente=paciente_para_formulario(paciente),
     )
+
+
+# DELETE = "apague este paciente". Mesmo endereço do GET e do PUT:
+# na API, o MÉTODO diz o que fazer e o endereço diz com quem.
+@app.delete("/api/pacientes/<int:id>")
+def api_excluir_paciente(id):
+    paciente = db.session.get(Paciente, id)
+    if paciente is None:
+        return jsonify(erro="Paciente não encontrado."), 404
+    return jsonify(mensagem=acao_excluir_paciente(paciente))
 
 
 if __name__ == "__main__":

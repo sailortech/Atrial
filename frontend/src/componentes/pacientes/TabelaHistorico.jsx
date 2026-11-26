@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export default function TabelaHistorico({ pacientes }) {
   return (
     <section>
@@ -22,7 +24,10 @@ export default function TabelaHistorico({ pacientes }) {
               const ausente = p.status === 'Não compareceu'
               return (
                 <tr key={p.id} className={ausente ? 'ausente' : undefined}>
-                  <td>{p.nome}</td>
+                  <td>
+                    {p.nome}
+                    <Link to={`/pacientes/${p.id}/editar`} className="editar">editar</Link>
+                  </td>
                   <td>{p.local ?? '-'}</td>
                   <td>{p.prioridade}</td>
                   <td>{p.encerrado_em ?? '-'}</td>
