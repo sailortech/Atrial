@@ -79,18 +79,36 @@ O banco já nasce com quatro locais: Triagem e Consultório 1, 2 e 3. Eles podem
 
 ## Como rodar
 
+### Para usar no dia a dia
+
+Dê **dois cliques em `iniciar.cmd`**, na pasta do projeto. (Ou, no terminal: `cd backend` e `venv\Scripts\python servidor.py`.)
+
+Abre uma janela que mostra os endereços:
+
+```
+  Atrial ligado. Para desligar: Ctrl+C (ou feche esta janela).
+
+  Neste computador:   http://127.0.0.1:5000
+  Na TV (painel):     http://192.168.0.12:5000/app/painel
+  Outros computadores: http://192.168.0.12:5000
+```
+
+Abra o primeiro endereço e entre com o usuário criado no passo 3. Os outros usuários podem ser cadastrados na tela **Usuários**. **Deixe a janela aberta** enquanto o sistema estiver em uso: fechar a janela desliga o Atrial.
+
+O `servidor.py` usa o **Waitress**, um servidor feito para uso de verdade, e aceita conexões da rede, para a TV e outros computadores. Na primeira vez, o **Firewall do Windows** pergunta se o Python pode usar a rede: permita em **redes privadas**. Antes de ligar, ele confere o React: sem `npm run build`, não liga e explica o que fazer; com o build desatualizado em relação ao código, liga e avisa.
+
+### Para programar no backend
+
 ```powershell
 cd backend
 venv\Scripts\python -m flask --app app run --debug
 ```
 
-Abra **http://127.0.0.1:5000** (você vai para `/app/`) e entre com o usuário criado no passo 3. Os outros usuários podem ser cadastrados na tela **Usuários**.
+O `--debug` reinicia o servidor sozinho quando um arquivo do backend muda, e mostra os erros detalhados. **Use só no seu computador, nunca no dia a dia da clínica:** a página de erro do modo debug mostra o código do sistema. Se o servidor ficar mostrando um erro estranho depois de você editar vários arquivos de uma vez, pare (Ctrl+C) e rode de novo.
 
-O Flask entrega as telas que o `npm run build` gerou. **Mudou o código do React? Rode `npm run build` de novo** (ou use o modo de desenvolvimento, abaixo).
+O Flask entrega as telas que o `npm run build` gerou. **Mudou o código do React? Rode `npm run build` de novo** (ou use o modo abaixo).
 
-O `--debug` reinicia o servidor sozinho quando um arquivo do backend muda, e mostra os erros detalhados. **Use só no seu computador.** Se o servidor ficar mostrando um erro estranho depois de você editar vários arquivos de uma vez, pare (Ctrl+C) e rode de novo.
-
-### Para mexer no código do React
+### Para programar no React
 
 ```powershell
 # Terminal 1
@@ -106,7 +124,7 @@ Abra **http://localhost:5173/app/**. O Vite mostra cada mudança na hora, sem pr
 
 ### Painel na TV
 
-Abra **http://127.0.0.1:5000/app/painel** no navegador da TV, em tela cheia (F11), e clique uma vez em **Ativar som**. Para a TV acessar o computador que roda o Atrial, os dois precisam estar na mesma rede, e o servidor precisa ser iniciado com `--host 0.0.0.0`. Nesse caso, a TV usa o endereço IP do computador no lugar de `127.0.0.1`. (O endereço antigo, `/painel`, também funciona.)
+Ligue o Atrial pelo `iniciar.cmd` e, no navegador da TV, abra o endereço que aparece na janela em **"Na TV (painel)"**. Ponha em tela cheia (F11) e clique uma vez em **Ativar som**. A TV e o computador precisam estar na mesma rede. (O endereço antigo, `/painel`, também funciona.)
 
 ## Testes
 
@@ -149,6 +167,8 @@ Antes de mexer no banco de verdade, faça uma cópia do `backend/instance/atrial
 | `SECRET_KEY` | Assina o cookie de login e os códigos CSRF. Quem souber essa chave consegue se passar por qualquer usuário. | É gerada uma chave aleatória e guardada em `backend/instance/secret_key` |
 | `DATABASE_URL` | Endereço do banco de dados | `sqlite:///atrial.db` (o arquivo fica em `backend/instance/`) |
 | `ATRIAL_FRONTEND_DIST` | Pasta com o React pronto, que o Flask entrega em `/app/` | `frontend/dist/` |
+| `ATRIAL_PORTA` | Porta do `servidor.py` | `5000` |
+| `ATRIAL_HOST` | Quem pode abrir o `servidor.py`: `0.0.0.0` (a rede toda) ou `127.0.0.1` (só este computador) | `0.0.0.0` |
 | `ATRIAL_BACKEND` | Só no `npm run dev`: endereço do Flask para onde o Vite repassa a API | `http://127.0.0.1:5000` |
 
 A pasta `backend/instance/` guarda o banco e a chave secreta, e **não vai para o Git** (está no `.gitignore`). A `frontend/dist/` também não: ela é gerada pelo `npm run build`.
@@ -156,8 +176,11 @@ A pasta `backend/instance/` guarda o banco e a chave secreta, e **não vai para 
 ## Organização do código
 
 ```
+iniciar.cmd               dois cliques: liga o Atrial para usar (chama o servidor.py)
+
 backend/
   app.py                  todo o backend: modelos, regras, API e comandos
+  servidor.py             liga o Atrial com o Waitress, na rede (uso do dia a dia)
   tests/
     conftest.py           preparação dos testes (fixtures)
     test_*.py             um arquivo por assunto
@@ -236,6 +259,6 @@ Comandos do frontend, sempre rodados de dentro de `frontend/`:
 
 ## Dependências
 
-**Backend:** `backend/requirements.txt` tem o que o sistema precisa para rodar: Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Login e Flask-WTF. `backend/requirements-dev.txt` acrescenta o **pytest**, que só é usado no desenvolvimento.
+**Backend:** `backend/requirements.txt` tem o que o sistema precisa para rodar: Flask, Flask-SQLAlchemy, Flask-Migrate, Flask-Login, Flask-WTF e o Waitress (o servidor do `servidor.py`). `backend/requirements-dev.txt` acrescenta o **pytest**, que só é usado no desenvolvimento.
 
 **Frontend:** `frontend/package.json` lista o React e o React Router, e as ferramentas de desenvolvimento (Vite, ESLint, e para os testes Vitest, jsdom e Testing Library). O `package-lock.json` guarda as versões exatas instaladas, para todo mundo instalar igual.
