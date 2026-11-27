@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Atrial</title>
+    <script>
+      // Aplica o tema salvo ANTES de a página aparecer. Se esperasse o
+      // React carregar, a tela piscaria clara e só depois ficaria escura.
+      // (O resto do tema fica em src/hooks/useTema.js.)
+      try {
+        var tema = localStorage.getItem('atrial-tema')
+        if (tema === 'claro' || tema === 'escuro') {
+          document.documentElement.dataset.tema = tema
+        }
+      } catch (e) {
+        // sem localStorage: segue o sistema
+      }
+    </script>
   </head>
   <body>
     <!-- O React desenha a página inteira dentro desta div -->

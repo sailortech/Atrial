@@ -1,17 +1,127 @@
 /* Visual das telas da recepção (login, pacientes...).
    O painel da TV tem o seu próprio, em painel.css. */
 
+/* ----- Cores (tema claro e tema escuro) -----
+
+   TODAS as cores das telas ficam aqui, em variáveis. O resto do
+   arquivo só usa var(--nome). Assim, trocar de tema é só trocar os
+   valores destas variáveis: nenhuma outra regra precisa mudar.
+
+   Quem escolhe o tema é o atributo data-tema no <html> (ver useTema.js):
+     data-tema="claro" ou "escuro" -> a escolha da pessoa
+     sem data-tema                 -> segue o sistema (Windows/celular)
+
+   Contrastes conferidos (WCAG): texto comum >= 4,5:1 nos dois temas. */
+
 :root {
+  color-scheme: light; /* campos, calendário e barras de rolagem do navegador */
+
+  --fundo: #ffffff;
   --texto: #222;
   --texto-suave: #555;
+  --texto-apagado: #767676; /* "nenhum paciente", itens desativados */
   --linha: #ddd;
   --fundo-cabecalho: #f7f7f5;
-  --principal: #2a78d6;
+  --fundo-campo: #ffffff;
+  --borda-campo: #bbb;
+  --fundo-hover: #f2f2f2;
+  --fundo-titulo-tabela: #f2f2f2;
+  --fundo-em-atendimento: #eef7f1;
+  --principal: #2672d0;
   --principal-escuro: #1f5fae;
+  --texto-sobre-principal: #ffffff;
+  --link: var(--principal);
   --sucesso-fundo: #d1e7dd;
   --sucesso-texto: #0f5132;
   --erro-fundo: #f8d7da;
   --erro-texto: #842029;
+  --prioridade-fundo: #eee;
+  --preferencial-fundo: #fff3cd;
+  --preferencial-texto: #664d03;
+
+  /* Gráfico (cor da série validada contra o fundo de cada tema) */
+  --serie-1: #2a78d6;
+  --grade: #e6e5e2;
+  --chao: #bbb;
+  --coluna-em-foco: rgba(0, 0, 0, 0.04);
+  --dica-fundo: #222;
+  --dica-texto: #fff;
+}
+
+/* Tema escuro: as MESMAS variáveis, com outros valores. Não é só
+   "inverter" as cores: cada uma foi escolhida (e o contraste conferido)
+   para o fundo escuro. Fundos de aviso ficam escuros e o texto deles
+   claro, senão as faixas coloridas "acenderiam" na tela. */
+:root[data-tema='escuro'] {
+  color-scheme: dark;
+
+  --fundo: #17191c;
+  --texto: #e8e6e3;
+  --texto-suave: #a9a7a3;
+  --texto-apagado: #8f8d89;
+  --linha: #34373c;
+  --fundo-cabecalho: #1f2226;
+  --fundo-campo: #202327;
+  --borda-campo: #4a4e54;
+  --fundo-hover: #2a2e33;
+  --fundo-titulo-tabela: #23262a;
+  --fundo-em-atendimento: #18301f;
+  --principal: #2672d0;
+  --principal-escuro: #3a86e4; /* no escuro, o "hover" clareia */
+  --link: #7db3f5;
+  --sucesso-fundo: #163b2a;
+  --sucesso-texto: #8fdcb4;
+  --erro-fundo: #4a1d22;
+  --erro-texto: #f3a5ad;
+  --prioridade-fundo: #2f3237;
+  --preferencial-fundo: #4a3b0c;
+  --preferencial-texto: #f5d77a;
+
+  --serie-1: #4f94e8;
+  --grade: #2c2f33;
+  --chao: #5a5e64;
+  --coluna-em-foco: rgba(255, 255, 255, 0.06);
+  --dica-fundo: #e8e6e3;
+  --dica-texto: #17191c;
+}
+
+/* "Automático" (sem data-tema): segue o sistema. Os valores são os
+   mesmos do bloco acima; o CSS não deixa reaproveitar um bloco dentro
+   do outro, por isso a repetição. (useTema.test.js confere que os
+   dois blocos continuam iguais.) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema]) {
+    color-scheme: dark;
+
+    --fundo: #17191c;
+    --texto: #e8e6e3;
+    --texto-suave: #a9a7a3;
+    --texto-apagado: #8f8d89;
+    --linha: #34373c;
+    --fundo-cabecalho: #1f2226;
+    --fundo-campo: #202327;
+    --borda-campo: #4a4e54;
+    --fundo-hover: #2a2e33;
+    --fundo-titulo-tabela: #23262a;
+    --fundo-em-atendimento: #18301f;
+    --principal: #2672d0;
+    --principal-escuro: #3a86e4; /* no escuro, o "hover" clareia */
+    --link: #7db3f5;
+    --sucesso-fundo: #163b2a;
+    --sucesso-texto: #8fdcb4;
+    --erro-fundo: #4a1d22;
+    --erro-texto: #f3a5ad;
+    --prioridade-fundo: #2f3237;
+    --preferencial-fundo: #4a3b0c;
+    --preferencial-texto: #f5d77a;
+
+    --serie-1: #4f94e8;
+    --grade: #2c2f33;
+    --chao: #5a5e64;
+    --coluna-em-foco: rgba(255, 255, 255, 0.06);
+    --dica-fundo: #e8e6e3;
+    --dica-texto: #17191c;
+  }
 }
 
 * {
@@ -22,7 +132,13 @@ body {
   margin: 0;
   font-family: Arial, sans-serif;
   color: var(--texto);
-  background: #fff;
+  background: var(--fundo);
+}
+
+/* Links comuns ("← Anterior", "Cancelar"...). Sem isto, ficariam com
+   o azul/roxo padrão do navegador, ilegível no tema escuro. */
+a {
+  color: var(--link);
 }
 
 /* ----- Estrutura ----- */
@@ -96,15 +212,15 @@ h1.marca {
 button {
   font: inherit;
   padding: 8px 14px;
-  border: 1px solid #bbb;
+  border: 1px solid var(--borda-campo);
   border-radius: 4px;
-  background: #fff;
+  background: var(--fundo-campo);
   color: var(--texto);
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
-  background: #f2f2f2;
+  background: var(--fundo-hover);
 }
 
 button:disabled {
@@ -115,7 +231,7 @@ button:disabled {
 button.principal {
   background: var(--principal);
   border-color: var(--principal);
-  color: #fff;
+  color: var(--texto-sobre-principal);
 }
 
 button.principal:hover:not(:disabled) {
@@ -127,7 +243,7 @@ button.link {
   padding: 0;
   border: none;
   background: none;
-  color: var(--principal);
+  color: var(--link);
   text-decoration: underline;
 }
 
@@ -144,8 +260,10 @@ select,
 textarea {
   font: inherit;
   padding: 8px 10px;
-  border: 1px solid #bbb;
+  border: 1px solid var(--borda-campo);
   border-radius: 4px;
+  background: var(--fundo-campo);
+  color: var(--texto);
 }
 
 .formulario {
@@ -221,7 +339,7 @@ section {
 }
 
 .vazio {
-  color: #888;
+  color: var(--texto-apagado);
   font-style: italic;
 }
 
@@ -249,11 +367,11 @@ td {
 }
 
 th {
-  background: #f2f2f2;
+  background: var(--fundo-titulo-tabela);
 }
 
 tr.em-atendimento td {
-  background: #eef7f1;
+  background: var(--fundo-em-atendimento);
 }
 
 td.acoes {
@@ -276,7 +394,7 @@ td.acoes .link {
 }
 
 .historico {
-  color: #666;
+  color: var(--texto-suave);
 }
 
 tr.ausente td {
@@ -290,12 +408,12 @@ tr.ausente td {
   border-radius: 10px;
   font-size: 0.9em;
   font-weight: bold;
-  background: #eee;
+  background: var(--prioridade-fundo);
 }
 
 .prioridade.preferencial {
-  background: #fff3cd;
-  color: #664d03;
+  background: var(--preferencial-fundo);
+  color: var(--preferencial-texto);
 }
 
 .prioridade.urgente {
@@ -322,7 +440,7 @@ a.botao {
 
 a.botao.principal {
   background: var(--principal);
-  color: #fff;
+  color: var(--texto-sobre-principal);
 }
 
 a.botao.principal:hover {
@@ -404,22 +522,17 @@ td a.editar {
 }
 
 button.perigo {
-  background: #fff;
+  background: var(--fundo-campo);
   border: 1px solid var(--erro-texto);
   color: var(--erro-texto);
 }
 
 button.perigo:hover:not(:disabled) {
   background: var(--erro-texto);
-  color: #fff;
+  color: var(--fundo);
 }
 
 /* ----- Relatório ----- */
-
-:root {
-  --serie-1: #2a78d6; /* azul da série (validado contra o fundo claro) */
-  --grade: #e6e5e2;
-}
 
 .relatorio-dia {
   display: flex;
@@ -478,7 +591,7 @@ button.perigo:hover:not(:disabled) {
 }
 
 .grafico .chao {
-  stroke: #bbb;
+  stroke: var(--chao);
 }
 
 .grafico .eixo {
@@ -501,15 +614,15 @@ button.perigo:hover:not(:disabled) {
 /* Coluna em foco/hover: um fundo leve marca qual está sendo lida */
 .grafico .coluna:hover .alvo,
 .grafico .coluna:focus-visible .alvo {
-  fill: rgba(0, 0, 0, 0.04);
+  fill: var(--coluna-em-foco);
 }
 
 .grafico-dica {
   position: absolute;
   transform: translate(-50%, calc(-100% - 8px)); /* centrada, em cima da barra */
   padding: 6px 10px;
-  background: #222;
-  color: #fff;
+  background: var(--dica-fundo);
+  color: var(--dica-texto);
   font-size: 0.9rem;
   border-radius: 4px;
   white-space: nowrap;
@@ -571,7 +684,7 @@ table.tabela-estreita {
 }
 
 tr.inativo td {
-  color: #888;
+  color: var(--texto-apagado);
 }
 
 /* ----- Usuários ----- */
@@ -602,4 +715,21 @@ tr.linha-extra td {
 
 form.renomear .linha-de-cadastro {
   margin: 0;
+}
+
+/* ----- Tema (claro / escuro / automático) ----- */
+
+.tema select {
+  padding: 4px 6px;
+  font-size: 0.9rem;
+}
+
+/* Texto só para leitor de tela (invisível, mas lido em voz alta) */
+.so-leitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

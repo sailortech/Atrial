@@ -1,6 +1,7 @@
 import { Link, NavLink } from 'react-router-dom'
 
 import { useSessao } from '../sessao.jsx'
+import SeletorDeTema from './SeletorDeTema.jsx'
 
 // Barra do topo das telas da recepção
 export default function Cabecalho() {
@@ -31,6 +32,7 @@ export default function Cabecalho() {
       </nav>
 
       <div className="usuario">
+        <SeletorDeTema />
         {/* Clicar no próprio nome leva para "Minha senha" (igual ao Flask) */}
         <NavLink to="/minha-senha" title="Trocar minha senha">{usuario.nome}</NavLink>
         <button type="button" onClick={sair}>Sair</button>
