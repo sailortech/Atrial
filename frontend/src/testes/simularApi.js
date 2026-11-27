@@ -9,6 +9,7 @@ import { vi } from 'vitest'
  *     'GET /api/locais': { locais: [...] },               // 200 + este JSON
  *     'POST /api/locais': [422, { erro: '...', erros: {...} }],  // código + JSON
  *     'POST /api/x': (corpo) => [201, { mensagem: corpo.nome }], // calculado
+ *     'GET /api/y': (_corpo, caminho) => ...,  // caminho tem o "?q=..."
  *   })
  *
  * Devolve o fetch falso: api.pedidos lista o que o React pediu
@@ -29,7 +30,8 @@ export function simularApi(rotas) {
     }
 
     let resposta = rotas[chave]
-    if (typeof resposta === 'function') resposta = resposta(corpo)
+    // A função recebe o corpo e o endereço completo (com o "?q=...")
+    if (typeof resposta === 'function') resposta = resposta(corpo, caminho)
     const [status, dados] = Array.isArray(resposta) ? resposta : [200, resposta]
 
     // Só o que o api.js usa de uma resposta de verdade
