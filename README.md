@@ -23,6 +23,7 @@ O projeto tem duas partes:
 - Tempo de espera e duração de cada atendimento.
 - Busca por nome ou CPF que ignora acentos e maiúsculas ("joao" acha "João").
 - A lista de pacientes se atualiza sozinha a cada 20 segundos.
+- **Tema claro, escuro ou automático** (segue o Windows ou o celular), escolhido no cabeçalho. A escolha fica guardada em cada computador.
 
 **Painel da TV** (`/app/painel`)
 - Mostra quem está sendo chamado e para onde, com as últimas chamadas e quantas pessoas estão na fila.
@@ -194,6 +195,7 @@ Dentro do `app.py`, as partes estão separadas por comentários (`# ---------- L
 - **O paciente guarda o *nome* do local, não o id:** é o registro do que aconteceu. Se um consultório for desativado ou renomeado depois, o histórico não muda.
 - **Desativar em vez de apagar** (locais e usuários): o histórico continua fazendo sentido.
 - **`chamado_em` × `ultima_chamada`:** a espera é medida até a **primeira** chamada. Chamar de novo quem não apareceu não aumenta a espera no relatório.
+- **Cores só em variáveis CSS:** todas as cores das telas ficam no topo do `app.css`, com um conjunto para o tema claro e outro para o escuro, e o contraste de cada texto foi conferido nos dois. Trocar de tema é só trocar o valor das variáveis.
 - **Relatório:** as contas são feitas em Python, e não em SQL, porque fica mais fácil de ler. Com o movimento de um dia, são poucas linhas. O desenho do gráfico é feito pelo React.
 
 ## Telas e API
